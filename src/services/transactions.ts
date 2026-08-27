@@ -1,0 +1,302 @@
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  like,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
+import { z } from "zod";
+import type { Db } from "@/db/client";
+import {
+  accounts,
+  categories,
+  transactionSplits,
+  transactions,
+  transfers,
+  type Transaction,
+} from "@/db/schema";
+import { monthEnd, monthStart } from "@/domain/dates";
+import type { MonthKey } from "@/domain/types";
+import { logAudit } from "./audit";
+import { AppError, newId, nowIso } from "./context";
+import { createRule } from "./rules";
+
+export interface TransactionFilters {
+  accountId?: string | null;
+  month?: MonthKey | null;
+  categoryId?: string | null;
+  uncategorized?: boolean;
+  transfersOnly?: boolean;
+  search?: string | null;
+  limit?: number;
+  offset?: number;
+}
+
+export interface TransactionRow extends Transaction {
+  accountName: string;
+  accountKind: string;
+  categoryName: string | null;
+  categoryParentName: string | null;
+  counterpartAccountName: string | null;
+  splitCount: number;
+}
+
+export interface TransactionTotals {
+  count: number;
+  netCents: number;
+  inflowCents: number;
+  outflowCents: number;
+}
+
+export function queryTransactions(
+  db: Db,
+  f: TransactionFilters = {},
+): { rows: TransactionRow[]; total: number; totals: TransactionTotals } {
+  const parent = alias(categories, "parent");
+  const conds: SQL[] = [isNull(transactions.deletedAt)];
+  if (f.accountId) conds.push(eq(transactions.accountId, f.accountId));
+  if (f.month)
+    conds.push(
+      gte(transactions.postedDate, monthStart(f.month)),
+      lte(transactions.postedDate, monthEnd(f.month)),
+    );
+  if (f.categoryId)
+    conds.push(
+      or(eq(transactions.categoryId, f.categoryId), eq(categories.parentId, f.categoryId))!,
+    );
+  if (f.uncategorized) conds.push(isNull(transactions.categoryId), isNull(transactions.transferId));
+  if (f.transfersOnly) conds.push(sql`${transactions.transferId} is not null`);
+  if (f.search && f.search.trim()) {
+    const term = `%${f.search.trim()}%`;
+    conds.push(
+      or(
+        like(transactions.payeeDisplay, term),
+        like(transactions.payeeRaw, term),
+        like(transactions.memoRaw, term),
+        like(transactions.notes, term),
+      )!,
+    );
+  }
+  const where = and(...conds);
+  // Totals cover every matching row, not just this page.
+  const agg = db
+    .select({
+      n: sql<number>`count(*)`,
+      net: sql<number>`coalesce(sum(${transactions.amountCents}), 0)`,
+      inflow: sql<number>`coalesce(sum(case when ${transactions.amountCents} > 0 then ${transactions.amountCents} else 0 end), 0)`,
+      outflow: sql<number>`coalesce(sum(case when ${transactions.amountCents} < 0 then ${transactions.amountCents} else 0 end), 0)`,
+    })
+    .from(transactions)
+    .leftJoin(categories, eq(categories.id, transactions.categoryId))
+    .where(where)
+    .get();
+  const total = agg?.n ?? 0;
+  const totals: TransactionTotals = {
+    count: total,
+    netCents: agg?.net ?? 0,
+    inflowCents: agg?.inflow ?? 0,
+    outflowCents: agg?.outflow ?? 0,
+  };
+  const rows = db
+    .select({
+      t: transactions,
+      accountName: accounts.name,
+      accountKind: accounts.kind,
+      categoryName: categories.name,
+      categoryParentName: parent.name,
+      splitCount: sql<number>`(select count(*) from ${transactionSplits} where ${transactionSplits.transactionId} = ${transactions.id})`,
+    })
+    .from(transactions)
+    .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+    .leftJoin(categories, eq(categories.id, transactions.categoryId))
+    .leftJoin(parent, eq(parent.id, categories.parentId))
+    .where(where)
+    .orderBy(desc(transactions.postedDate), desc(transactions.createdAt))
+    .limit(f.limit ?? 200)
+    .offset(f.offset ?? 0)
+    .all();
+
+  // Counterpart account names for transfers (a second cheap query keeps the main one simple).
+  const transferIds = rows.map((r) => r.t.transferId).filter((x): x is string => !!x);
+  const counterpart = new Map<string, string>();
+  if (transferIds.length) {
+    const links = db.select().from(transfers).where(inArray(transfers.id, transferIds)).all();
+    const otherIds = links.flatMap((l) => [l.fromTxnId, l.toTxnId]);
+    const others = db
+      .select({ id: transactions.id, accountName: accounts.name })
+      .from(transactions)
+      .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+      .where(inArray(transactions.id, otherIds))
+      .all();
+    const nameById = new Map(others.map((o) => [o.id, o.accountName]));
+    for (const l of links) {
+      counterpart.set(`${l.id}|${l.fromTxnId}`, nameById.get(l.toTxnId) ?? "?");
+      counterpart.set(`${l.id}|${l.toTxnId}`, nameById.get(l.fromTxnId) ?? "?");
+    }
+  }
+  return {
+    total,
+    totals,
+    rows: rows.map((r) => ({
+      ...r.t,
+      accountName: r.accountName,
+      accountKind: r.accountKind,
+      categoryName: r.categoryName,
+      categoryParentName: r.categoryParentName,
+      counterpartAccountName: r.t.transferId
+        ? (counterpart.get(`${r.t.transferId}|${r.t.id}`) ?? null)
+        : null,
+      splitCount: r.splitCount,
+    })),
+  };
+}
+
+export function getTransaction(db: Db, id: string): Transaction {
+  const t = db.select().from(transactions).where(eq(transactions.id, id)).get();
+  if (!t) throw new AppError("Transaction not found", "not_found");
+  return t;
+}
+
+export function setCategory(
+  db: Db,
+  id: string,
+  categoryId: string | null,
+  opts: { alwaysForPayee?: boolean } = {},
+): void {
+  const before = getTransaction(db, id);
+  if (before.transferId && categoryId !== "cat-transfer")
+    throw new AppError("Unlink the transfer first to categorize this transaction", "invalid");
+  db.update(transactions)
+    .set({ categoryId, isReviewed: true, updatedAt: nowIso() })
+    .where(eq(transactions.id, id))
+    .run();
+  logAudit(
+    db,
+    "transaction",
+    id,
+    "set_category",
+    { categoryId: before.categoryId },
+    { categoryId },
+  );
+  if (opts.alwaysForPayee && categoryId) {
+    createRule(
+      db,
+      {
+        priority: 50,
+        matchField: "payee_key",
+        matchType: "exact",
+        pattern: before.payeeKey,
+        setCategoryId: categoryId,
+        enabled: true,
+      },
+      id,
+    );
+    // Apply to other uncategorized rows with the same payee right away.
+    db.update(transactions)
+      .set({ categoryId, updatedAt: nowIso() })
+      .where(
+        and(
+          eq(transactions.payeeKey, before.payeeKey),
+          isNull(transactions.categoryId),
+          isNull(transactions.transferId),
+        ),
+      )
+      .run();
+  }
+}
+
+export function setPayeeDisplay(db: Db, id: string, payeeDisplay: string): void {
+  const before = getTransaction(db, id);
+  db.update(transactions)
+    .set({ payeeDisplay, updatedAt: nowIso() })
+    .where(eq(transactions.id, id))
+    .run();
+  logAudit(
+    db,
+    "transaction",
+    id,
+    "set_payee_display",
+    { payeeDisplay: before.payeeDisplay },
+    { payeeDisplay },
+  );
+}
+
+export function setNotes(db: Db, id: string, notes: string): void {
+  db.update(transactions).set({ notes, updatedAt: nowIso() }).where(eq(transactions.id, id)).run();
+}
+
+export const splitInput = z
+  .array(
+    z.object({
+      categoryId: z.string().nullable(),
+      amountCents: z.number().int(),
+      memo: z.string().default(""),
+    }),
+  )
+  .max(20);
+
+/** Replace splits. An empty array removes them. Splits must sum to the transaction amount. */
+export function setSplits(db: Db, id: string, splits: z.infer<typeof splitInput>): void {
+  const t = getTransaction(db, id);
+  if (splits.length > 0) {
+    const sum = splits.reduce((s, x) => s + x.amountCents, 0);
+    if (sum !== t.amountCents)
+      throw new AppError("Splits must add up to the transaction amount", "invalid");
+  }
+  const ts = nowIso();
+  db.transaction((tx) => {
+    tx.delete(transactionSplits).where(eq(transactionSplits.transactionId, id)).run();
+    for (const s of splits)
+      tx.insert(transactionSplits)
+        .values({
+          id: newId(),
+          transactionId: id,
+          categoryId: s.categoryId,
+          amountCents: s.amountCents,
+          memo: s.memo,
+          createdAt: ts,
+          updatedAt: ts,
+        })
+        .run();
+    tx.update(transactions)
+      .set({ isReviewed: true, updatedAt: ts })
+      .where(eq(transactions.id, id))
+      .run();
+  });
+  logAudit(db, "transaction", id, "set_splits", undefined, splits);
+}
+
+export function listSplits(db: Db, transactionId: string) {
+  return db
+    .select()
+    .from(transactionSplits)
+    .where(eq(transactionSplits.transactionId, transactionId))
+    .orderBy(asc(transactionSplits.createdAt))
+    .all();
+}
+
+/** Most common category for a payee key, for suggestions when no rule matches. */
+export function suggestCategoryForPayee(db: Db, payeeKey: string): string | null {
+  const r = db
+    .select({ categoryId: transactions.categoryId, n: sql<number>`count(*)` })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.payeeKey, payeeKey),
+        sql`${transactions.categoryId} is not null`,
+        isNull(transactions.deletedAt),
+      ),
+    )
+    .groupBy(transactions.categoryId)
+    .orderBy(desc(sql`count(*)`))
+    .get();
+  return r?.categoryId ?? null;
+}

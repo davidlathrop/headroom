@@ -1,0 +1,9 @@
+Date, Time, Amount, Type, Description
+2026-03-02, 08:15:22, -45.00, Withdrawal, ACH Withdrawal VENMO PAYMENT
+2026-03-03, 01:02:11, 3100.00, Deposit, ACH Deposit ACME CORP PAYROLL
+2026-03-05, 14:30:05, -2400.00, Withdrawal, Payment to CHASE CARD SERVICES
+2026-03-06, 09:00:00, 500.00, Deposit, Internet transfer from Online Checking account ending in 4321
+2026-03-09, 12:22:41, -60.00, Withdrawal, Debit Card Purchase SQ *BLUE BOTTLE COFFEE
+2026-03-11, 17:45:09, -9.99, Withdrawal, Debit Card Purchase SPOTIFY USA
+2026-03-14, 10:10:10, -78.30, Withdrawal, Debit Card Purchase TRADER JOE'S #123
+2026-03-31, 23:59:59, 3.41, Deposit, Interest Paid
