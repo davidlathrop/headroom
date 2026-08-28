@@ -4,3 +4,7 @@ drizzle
 data
 docs
 package-lock.json
+.next-electron
+.next-build
+electron/dist
+release

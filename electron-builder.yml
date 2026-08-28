@@ -1,0 +1,38 @@
+appId: app.headroom.desktop
+productName: Headroom
+copyright: Local-first. Your data never leaves this machine.
+directories:
+  output: release
+  buildResources: electron/build
+# Only the compiled shell goes in the asar; the whole web app (server + traced node_modules,
+# with better-sqlite3 rebuilt for Electron) ships as a plain resources folder so Node can
+# load it and its native module directly.
+files:
+  - electron/dist/main/**
+  - package.json
+  - "!node_modules/**"
+extraResources:
+  - from: electron/dist/app
+    to: app
+    filter:
+      - "**/*"
+      - "**/.*"
+      - "!node_modules/**"
+  # electron-builder drops a node_modules folder inside extraResources; copy it as its own entry.
+  - from: electron/dist/app/node_modules
+    to: app/node_modules
+    filter:
+      - "**/*"
+      - "**/.*"
+asar: true
+npmRebuild: false
+mac:
+  category: public.app-category.finance
+  target:
+    - dmg
+    - zip
+win:
+  target: nsis
+linux:
+  target: AppImage
+  category: Office

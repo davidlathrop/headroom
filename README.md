@@ -32,6 +32,10 @@ HEADROOM_DB=./data/demo.sqlite HEADROOM_IMPORT_DIR=./data/demo-imports npm run d
 
 Overlapping exports are safe and encouraged: re-importing a file inserts nothing; two identical coffees on the same day both survive; a pending charge that later posts under a different description is flagged for review rather than silently duplicated or dropped.
 
+## Desktop app
+
+The `electron` branch wraps the same server in an Electron window with data in your OS profile folder. `npm run electron:dev` for development, `npm run electron:build` to package; details in [`docs/ELECTRON.md`](docs/ELECTRON.md).
+
 ## Develop
 
 ```sh
