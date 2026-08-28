@@ -48,6 +48,7 @@ next-env.d.ts
 *.sqlite-shm
 /.next-build/
 /.next-electron/
+/.next-electron-dev/
 
 # electron
 /electron/dist/

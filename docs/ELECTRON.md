@@ -29,7 +29,7 @@ Electron main (electron/main.ts)
 
 | Command | What it does |
 |---|---|
-| `npm run electron:dev` | `next dev` under system Node + an Electron window on it. Same `~/.headroom` data as web dev. No native rebuild needed. |
+| `npm run electron:dev` | A `next dev` on port **3210** (dist dir `.next-electron-dev`, so it never collides with a regular `next dev` on 3000) + an Electron window on it. Same `~/.headroom` data as web dev. No native rebuild needed. `HEADROOM_DEV_URL` points the window elsewhere. |
 | `npm run electron:assemble` | `ELECTRON_BUILD=1 next build` (standalone output, into `.next-electron` so a running `next dev` is untouched), then `scripts/electron-assemble.mjs` copies server + static + public + drizzle into `electron/dist/app`. |
 | `npm run electron:smoke` | Runs the assembled app headless against a temp profile, fetches `/`, `/budgets`, `/accounts`, `/forecast`, prints `SMOKE_OK` / `SMOKE_FAIL`, exits accordingly. The pipeline's integration test. |
 | `npm run electron:build` | assemble + compile + `electron-builder` → `release/` (dmg + zip on macOS, nsis on Windows, AppImage on Linux). |

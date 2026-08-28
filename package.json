@@ -17,7 +17,7 @@
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test",
     "electron:compile": "tsc -p electron/tsconfig.json",
-    "electron:dev": "concurrently -k -n next,electron \"next dev\" \"wait-on http://localhost:3000 && npm run electron:compile && electron .\"",
+    "electron:dev": "concurrently -k -n next,electron \"NEXT_DIST_DIR=.next-electron-dev next dev -p 3210\" \"wait-on http://localhost:3210 && npm run electron:compile && HEADROOM_DEV_URL=http://localhost:3210 electron .\"",
     "electron:assemble": "ELECTRON_BUILD=1 NEXT_DIST_DIR=.next-electron next build && NEXT_DIST_DIR=.next-electron node scripts/electron-assemble.mjs",
     "electron:smoke": "npm run electron:compile && HEADROOM_STANDALONE=1 HEADROOM_SMOKE=1 electron .",
     "electron:build": "npm run electron:assemble && npm run electron:compile && electron-builder"

@@ -7,8 +7,9 @@
  *  - packaged: the Next standalone build lives in <resources>/app and is started as an Electron
  *    utility process on a free localhost port; the database and uploaded files live in
  *    ~/.headroom (HEADROOM_DATA_DIR to move them), shared with the web app.
- *  - development (`npm run electron:dev`): a normal `next dev` runs under system Node and the
- *    window simply opens it, so native modules need no rebuild until packaging.
+ *  - development (`npm run electron:dev`): a `next dev` on its own port (3210) and dist dir runs
+ *    under system Node and the window simply opens it — so it never collides with a regular
+ *    `next dev` on 3000, and native modules need no rebuild until packaging.
  *
  * HEADROOM_STANDALONE=1 forces the packaged path in development (after `electron:assemble`);
  * HEADROOM_SMOKE=1 starts the server against a temporary data folder, fetches two pages, prints
