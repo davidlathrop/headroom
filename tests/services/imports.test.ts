@@ -9,6 +9,10 @@ import { monthReport } from "@/services/reports";
 import { ensureSeeded } from "@/services/seed";
 import { queryTransactions } from "@/services/transactions";
 import { accountBalance, reconcileAccount } from "@/services/reconcile";
+import { ensureCoverageRanges } from "@/services/coverage";
+import { setSetting } from "@/services/settings";
+import { batchCoverage } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 const FIX = path.join(process.cwd(), "tests", "fixtures");
 const read = (name: string) => fs.readFileSync(path.join(FIX, name));
@@ -152,6 +156,43 @@ describe("import pipeline (end to end)", () => {
     const rec = reconcileAccount(db, checkingId);
     expect(rec).not.toBeNull();
     expect(rec!.previous.source).toBe("opening");
+  });
+
+  it("OFX: coverage is the statement range, even when the file adds nothing new", () => {
+    const r1 = importFile("checking.ofx", checkingId);
+    // Transactions run Mar 2–31 but the statement says Mar 1–31.
+    expect(accountCoverage(db, checkingId)).toEqual([
+      { start: "2026-03-01", end: "2026-03-31", batchId: r1.batch.id },
+    ]);
+    expect(r1.batch.coverageStart).toBe("2026-03-01");
+    // An idle account's statement (no rows at all) still vouches for its window.
+    const idle = Buffer.from(
+      "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>USD\n<BANKACCTFROM><ACCTID>12345<ACCTTYPE>CHECKING</BANKACCTFROM>\n<BANKTRANLIST><DTSTART>20260401000000<DTEND>20260430235959\n</BANKTRANLIST>\n<LEDGERBAL><BALAMT>1.00<DTASOF>20260430235959</LEDGERBAL>\n</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>",
+    );
+    const staged = stageImport(db, { fileName: "idle.ofx", bytes: idle, accountId: checkingId });
+    const r2 = commitBatch(db, staged.id);
+    expect(r2.inserted).toBe(0);
+    expect(accountCoverage(db, checkingId).map((w) => [w.start, w.end])).toEqual([
+      ["2026-03-01", "2026-03-31"],
+      ["2026-04-01", "2026-04-30"],
+    ]);
+    expect(monthReport(db, "2026-04").partial).toBe(false);
+  });
+
+  it("widens coverage recorded before statement ranges existed, once", () => {
+    const r1 = importFile("checking.ofx", checkingId);
+    // Simulate a batch committed by the old code: coverage from transaction dates only.
+    db.update(batchCoverage)
+      .set({ coverageStart: "2026-03-02", coverageEnd: "2026-03-30" })
+      .where(eq(batchCoverage.batchId, r1.batch.id))
+      .run();
+    setSetting(db, "coverage.rangesVersion", 0);
+    expect(ensureCoverageRanges(db)).toEqual({ widened: 1, batches: 1 });
+    expect(accountCoverage(db, checkingId)[0]).toMatchObject({
+      start: "2026-03-01",
+      end: "2026-03-31",
+    });
+    expect(ensureCoverageRanges(db)).toEqual({ widened: 0, batches: 0 }); // recorded as done
   });
 
   it("flags a pending→posted drift as probable, skips it by default, imports it when forced", () => {

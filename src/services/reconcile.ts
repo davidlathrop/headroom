@@ -72,21 +72,78 @@ export interface Reconciliation {
   previous: Anchor;
   computedCents: Cents;
   differenceCents: Cents; // snapshot − computed; 0 means the ledger between the two anchors is complete
+  /**
+   * Set when the plain computation was off but a same-day reading explains it exactly: a balance
+   * "as of" a date is really as of some moment that day, so transactions posted that same day
+   * may or may not be in it. Not a ledger problem, so `differenceCents` is then 0.
+   */
+  explanation: string | null;
 }
 
-/** Compare the newest anchor against what the ledger implies from the anchor before it. */
+function sumOnDay(db: Db, accountId: string, date: ISODate): Cents {
+  return (
+    db
+      .select({ s: sql<number>`coalesce(sum(${transactions.amountCents}), 0)` })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.accountId, accountId),
+          isNull(transactions.deletedAt),
+          eq(transactions.postedDate, date),
+        ),
+      )
+      .get()?.s ?? 0
+  );
+}
+
+/**
+ * Compare the newest anchor against what the ledger implies from the anchor before it.
+ * The end-of-day reading (previous balance + everything posted after its date through the
+ * snapshot's date) is tried first. If that is off, the intraday readings are tried: the previous
+ * balance may predate that day's postings (add them), the snapshot may predate its own day's
+ * postings (drop them), or both. An exact match is reconciled with a note; otherwise the
+ * end-of-day difference is reported.
+ */
 export function reconcileAccount(db: Db, accountId: string): Reconciliation | null {
   const list = anchors(db, accountId);
   if (list.length < 2) return null;
   const snapshot = list[list.length - 1]!;
   const previous = list[list.length - 2]!;
-  const computed = previous.balanceCents + sumBetween(db, accountId, previous.date, snapshot.date);
-  return {
-    snapshot,
-    previous,
-    computedCents: computed,
-    differenceCents: snapshot.balanceCents - computed,
-  };
+  const base = previous.balanceCents + sumBetween(db, accountId, previous.date, snapshot.date);
+  const plain = snapshot.balanceCents - base;
+  if (plain === 0)
+    return { snapshot, previous, computedCents: base, differenceCents: 0, explanation: null };
+
+  const onPrev = sumOnDay(db, accountId, previous.date);
+  const onSnap = sumOnDay(db, accountId, snapshot.date);
+  const label = (a: Anchor) =>
+    `the ${a.source === "opening" ? "opening" : a.source} balance on ${a.date}`;
+  const readings: Array<{ adjust: Cents; note: string }> = [
+    {
+      adjust: onPrev,
+      note: `${label(previous)} was taken before that day's transactions posted`,
+    },
+    {
+      adjust: -onSnap,
+      note: `${label(snapshot)} was taken before that day's transactions posted`,
+    },
+    {
+      adjust: onPrev - onSnap,
+      note: `${label(previous)} and ${label(snapshot)} were both taken before those days' transactions posted`,
+    },
+  ];
+  for (const r of readings) {
+    if (r.adjust === 0) continue;
+    if (snapshot.balanceCents - (base + r.adjust) === 0)
+      return {
+        snapshot,
+        previous,
+        computedCents: base + r.adjust,
+        differenceCents: 0,
+        explanation: r.note,
+      };
+  }
+  return { snapshot, previous, computedCents: base, differenceCents: plain, explanation: null };
 }
 
 export function addSnapshot(

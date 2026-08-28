@@ -214,7 +214,11 @@ export default function HomePage() {
                     between {formatISO(r!.previous.date)} and {formatISO(r!.snapshot.date)} — a
                     missing or duplicated transaction in that window
                   </span>
-                  <Link href={`/transactions?account=${a.id}`}>Review</Link>
+                  <Link
+                    href={`/transactions?account=${a.id}&from=${r!.previous.date}&to=${r!.snapshot.date}`}
+                  >
+                    Review
+                  </Link>
                 </li>
               ))}
             </ul>

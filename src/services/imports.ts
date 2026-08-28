@@ -22,7 +22,7 @@ import {
 } from "@/importers/csv/profile";
 import { readHeader } from "@/importers/csv/parse";
 import { detectFormat, matchCsvProfile, parseWithProfile } from "@/importers/detect";
-import type { ParseIssue, ParsedBalance, ParsedRow } from "@/importers/types";
+import type { ParseIssue, ParsedBalance, ParsedRange, ParsedRow } from "@/importers/types";
 import { createAccount, findAccountByLabel, getAccount, updateAccount } from "./accounts";
 import { logAudit } from "./audit";
 import { resolveCategoryHint } from "./categories";
@@ -41,6 +41,8 @@ export interface StagedPreview {
   issues: ParseIssue[];
   accountsInFile: string[];
   balances: ParsedBalance[];
+  /** Statement date ranges (OFX); absent on previews staged before ranges were recorded. */
+  ranges?: ParsedRange[];
   /** File account label → account id (null = unmapped). */
   accountMap: Record<string, string | null>;
   /** For files with no account labels. */
@@ -160,6 +162,7 @@ export function stageImport(db: Db, input: StageInput): ImportBatch {
       issues: [],
       accountsInFile: [],
       balances: [],
+      ranges: [],
       accountMap: {},
       singleAccountId: input.accountId ?? null,
       labels: [],
@@ -301,6 +304,7 @@ function buildPreview(
     issues: parsed.issues,
     accountsInFile: parsed.accountsInFile,
     balances: parsed.balances,
+    ranges: parsed.ranges,
     accountMap,
     singleAccountId,
     labels: labels.labeled.map((l) => ({
@@ -513,23 +517,25 @@ export function commitBatch(db: Db, batchId: string, opts: CommitOptions = {}): 
       insertedIds.push(id);
       if (c.categoryHint) hinted.push({ id, hint: c.categoryHint });
     }
-    // Coverage is per account: the span of *all* rows in the file for that account, duplicates included.
-    const byAccount = new Map<string, { start: string; end: string }>();
-    for (const l of labeled) {
-      const c = l.candidate;
-      const cur = byAccount.get(c.accountId);
-      if (!cur) byAccount.set(c.accountId, { start: c.postedDate, end: c.postedDate });
-      else {
-        if (c.postedDate < cur.start) cur.start = c.postedDate;
-        if (c.postedDate > cur.end) cur.end = c.postedDate;
-      }
-    }
+    // Coverage is per account: the span of *all* rows in the file for that account, duplicates
+    // included, widened by the statement's own date range when the file states one — so a
+    // statement with no activity still vouches for its window.
+    const byAccount = coverageByAccount(
+      labeled,
+      prev.ranges ?? [],
+      prev.accountMap,
+      prev.singleAccountId,
+    );
     for (const [accountId, w] of byAccount) {
       tx.insert(batchCoverage)
         .values({ id: newId(), batchId, accountId, coverageStart: w.start, coverageEnd: w.end })
         .run();
     }
     const s = summarize(labeled);
+    for (const w of byAccount.values()) {
+      if (s.coverageStart === null || w.start < s.coverageStart) s.coverageStart = w.start;
+      if (s.coverageEnd === null || w.end > s.coverageEnd) s.coverageEnd = w.end;
+    }
     tx.update(importBatches)
       .set({
         status: "committed",
@@ -585,6 +591,31 @@ export function commitBatch(db: Db, batchId: string, opts: CommitOptions = {}): 
     categorized,
     transfersLinked: linked,
   };
+}
+
+/** Per-account coverage windows: rows' posted dates widened by any statement range for that account. */
+export function coverageByAccount(
+  labeled: Array<{ candidate: { accountId: string; postedDate: string } }>,
+  ranges: ParsedRange[],
+  accountMap: Record<string, string | null>,
+  singleAccountId: string | null,
+): Map<string, { start: string; end: string }> {
+  const out = new Map<string, { start: string; end: string }>();
+  const widen = (accountId: string, start: string, end: string) => {
+    const cur = out.get(accountId);
+    if (!cur) out.set(accountId, { start, end });
+    else {
+      if (start < cur.start) cur.start = start;
+      if (end > cur.end) cur.end = end;
+    }
+  };
+  for (const l of labeled)
+    widen(l.candidate.accountId, l.candidate.postedDate, l.candidate.postedDate);
+  for (const r of ranges) {
+    const accountId = r.accountLabel != null ? accountMap[r.accountLabel] : singleAccountId;
+    if (accountId) widen(accountId, r.start, r.end);
+  }
+  return out;
 }
 
 /** Remove everything a batch inserted. Annotations on those rows go with them. */

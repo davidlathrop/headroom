@@ -21,6 +21,13 @@ export interface ParsedBalance {
   balanceCents: number;
 }
 
+/** The date range a statement says it covers (OFX DTSTART/DTEND) — coverage even with no rows. */
+export interface ParsedRange {
+  accountLabel: string | null;
+  start: string;
+  end: string;
+}
+
 export interface ParseResult {
   format: "ofx" | "csv";
   rows: ParsedRow[];
@@ -28,4 +35,5 @@ export interface ParseResult {
   /** Unique account labels seen in the file, in order of first appearance. */
   accountsInFile: string[];
   balances: ParsedBalance[];
+  ranges: ParsedRange[];
 }

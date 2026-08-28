@@ -24,7 +24,7 @@ import {
   type Transaction,
 } from "@/db/schema";
 import { monthEnd, monthStart } from "@/domain/dates";
-import type { MonthKey } from "@/domain/types";
+import type { ISODate, MonthKey } from "@/domain/types";
 import { logAudit } from "./audit";
 import { AppError, newId, nowIso } from "./context";
 import { createRule } from "./rules";
@@ -35,6 +35,9 @@ const TRANSFER_CATEGORY = "cat-transfer";
 export interface TransactionFilters {
   accountId?: string | null;
   month?: MonthKey | null;
+  /** Inclusive posted-date bounds; a reconciliation window, for instance. */
+  from?: ISODate | null;
+  to?: ISODate | null;
   categoryId?: string | null;
   uncategorized?: boolean;
   transfersOnly?: boolean;
@@ -71,6 +74,8 @@ export function queryTransactions(
       gte(transactions.postedDate, monthStart(f.month)),
       lte(transactions.postedDate, monthEnd(f.month)),
     );
+  if (f.from) conds.push(gte(transactions.postedDate, f.from));
+  if (f.to) conds.push(lte(transactions.postedDate, f.to));
   if (f.categoryId)
     conds.push(
       or(eq(transactions.categoryId, f.categoryId), eq(categories.parentId, f.categoryId))!,

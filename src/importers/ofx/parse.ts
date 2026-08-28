@@ -1,6 +1,6 @@
 import { parseCents } from "@/domain/money";
 import { toISO, isISODate } from "@/domain/dates";
-import type { ParsedBalance, ParsedRow, ParseIssue, ParseResult } from "../types";
+import type { ParsedBalance, ParsedRange, ParsedRow, ParseIssue, ParseResult } from "../types";
 
 /**
  * Minimal OFX reader for both dialects:
@@ -97,6 +97,7 @@ export function parseOfx(text: string): ParseResult {
   const rows: ParsedRow[] = [];
   const issues: ParseIssue[] = [];
   const balances: ParsedBalance[] = [];
+  const ranges: ParsedRange[] = [];
   const accountsInFile: string[] = [];
 
   const statements = [...findAll(tree, "STMTRS"), ...findAll(tree, "CCSTMTRS")];
@@ -141,14 +142,20 @@ export function parseOfx(text: string): ParseResult {
     }
 
     const ledger = child(stmt, "LEDGERBAL");
+    const asOf = ledger ? parseOfxDate(leaf(ledger, "DTASOF")) : null;
     if (ledger) {
       const bal = leaf(ledger, "BALAMT");
-      const asOf = parseOfxDate(leaf(ledger, "DTASOF"));
       const cents = bal == null ? null : parseCents(bal);
       if (cents != null && asOf)
         balances.push({ accountLabel, asOfDate: asOf, balanceCents: cents });
     }
+    // The statement's own window. DTEND is usually "end of today" on a file pulled mid-day, so
+    // it is capped at the balance date: the file cannot vouch for postings after that moment.
+    const start = tranList ? parseOfxDate(leaf(tranList, "DTSTART")) : null;
+    const endRaw = tranList ? parseOfxDate(leaf(tranList, "DTEND")) : null;
+    const end = endRaw && asOf && asOf < endRaw ? asOf : endRaw;
+    if (start && end && start <= end) ranges.push({ accountLabel, start, end });
   }
 
-  return { format: "ofx", rows, issues, accountsInFile, balances };
+  return { format: "ofx", rows, issues, accountsInFile, balances, ranges };
 }

@@ -115,3 +115,31 @@ describe("parseOfx — OFX 2.x XML credit card statement", () => {
     ]);
   });
 });
+
+describe("parseOfx — statement ranges", () => {
+  it("reads DTSTART/DTEND as the statement's coverage", () => {
+    const r = parseOfx(fixture("checking.ofx"));
+    expect(r.ranges).toEqual([
+      { accountLabel: r.accountsInFile[0], start: "2026-03-01", end: "2026-03-31" },
+    ]);
+  });
+  it("caps DTEND at the balance date: a file pulled mid-day cannot vouch for the rest of the day", () => {
+    const text = `OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>USD
+<BANKACCTFROM><ACCTID>12345<ACCTTYPE>CHECKING</BANKACCTFROM>
+<BANKTRANLIST><DTSTART>20260822000000<DTEND>20260828235959
+</BANKTRANLIST>
+<LEDGERBAL><BALAMT>100.00<DTASOF>20260828140525</LEDGERBAL>
+</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+    const r = parseOfx(text);
+    expect(r.rows).toHaveLength(0);
+    expect(r.ranges).toEqual([{ accountLabel: "12345", start: "2026-08-22", end: "2026-08-28" }]);
+    expect(r.balances[0]?.asOfDate).toBe("2026-08-28");
+    // Without a balance the range stands as stated; with an earlier balance date it is capped.
+    expect(parseOfx(text.replace("20260828140525", "20260827090000")).ranges[0]?.end).toBe(
+      "2026-08-27",
+    );
+  });
+});

@@ -1,5 +1,6 @@
 import { ulid } from "ulid";
 import { openDb, type Db } from "@/db/client";
+import { ensureCoverageRanges } from "./coverage";
 import { ensureSeeded } from "./seed";
 
 export function newId(): string {
@@ -11,13 +12,19 @@ export function nowIso(): string {
 }
 
 const g = globalThis as unknown as { __headroomSeeded?: boolean };
+/** Data upgrades re-check once per module evaluation, so a dev hot reload applies a new one. */
+let upgradesChecked = false;
 
-/** The application database: opened, migrated, and seeded exactly once per process. */
+/** The application database: opened, migrated, seeded once per process, data upgrades applied. */
 export function getDb(): Db {
   const db = openDb();
   if (!g.__headroomSeeded) {
     ensureSeeded(db);
     g.__headroomSeeded = true;
+  }
+  if (!upgradesChecked) {
+    ensureCoverageRanges(db);
+    upgradesChecked = true;
   }
   return db;
 }

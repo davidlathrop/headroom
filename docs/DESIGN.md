@@ -299,11 +299,15 @@ Stated as `fast-check` properties over generated files, and as golden-file tests
 
 ### 5.7 Coverage and gaps
 
-Each batch records `coverage_start..coverage_end`. An account's coverage is the union of its committed batches' windows. The Accounts screen draws it as a bar; the month report marks a month **partial** if any on-budget account lacks coverage for part of it, and the forecast excludes partial months from its trailing statistics. Exports should overlap generously (the app suggests "export from <last coverage end − 14 days>") — overlap is free because of §5.4.
+Each batch records `coverage_start..coverage_end` per account: the span of the rows it held, widened by the statement's own range when the file states one (OFX `DTSTART`/`DTEND`, capped at the balance date) — so a statement for an idle account still vouches for its window. An account's coverage is the union of its committed batches' windows. The Accounts screen draws it as a bar; the month report marks a month **partial** if any on-budget account lacks coverage for part of it, and the forecast excludes partial months from its trailing statistics. Exports should overlap generously (the app suggests "export from <last coverage end − 14 days>") — overlap is free because of §5.4.
 
 ### 5.8 Reconciliation
 
-Computed balance at date D for an account = latest snapshot ≤ D + Σ amounts of transactions with `posted_date` in `(snapshot.as_of_date, D]`. After every commit, the newest OFX ledger balance (or a statement balance you enter) is compared against the computed balance. A mismatch is surfaced as a reconciliation alert with the amount and the window it must be in. This is the backstop: if something ever *was* double-counted or missed, the numbers cannot quietly stay wrong.
+Computed balance at date D for an account = latest snapshot ≤ D + Σ amounts of transactions with `posted_date` in `(snapshot.as_of_date, D]`. After every commit, the newest OFX ledger balance (or a statement balance you enter) is compared against the computed balance. A mismatch is surfaced as a reconciliation alert with the amount and the window it must be in; *Review* opens the ledger filtered to exactly that window. This is the backstop: if something ever *was* double-counted or missed, the numbers cannot quietly stay wrong.
+
+One subtlety: an OFX `DTASOF` is a moment, not a day. A file downloaded mid-afternoon carries a balance that excludes transactions that post later that day, which the next download then includes. So when the end-of-day reading is off, `reconcileAccount` tries the intraday readings — the previous anchor before its own day's postings, the newest anchor before its own, or both — and if one matches exactly it reconciles with a note rather than raising a false one-day alert. Only a difference no reading explains is reported.
+
+Coverage for the *current* month is judged through `today − 3 days` (`COVERAGE_LAG_DAYS`): an export never contains today, and banks post overnight, so coverage ending yesterday is not a gap. Past months are judged in full.
 
 ### 5.9 Rollback
 

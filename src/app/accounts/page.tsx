@@ -115,13 +115,19 @@ export default function AccountsPage() {
                   <Money cents={rec.differenceCents} sign />. Something between{" "}
                   {formatISO(rec.previous.date)} and {formatISO(rec.snapshot.date)} is missing or
                   duplicated.{" "}
-                  <Link href={`/transactions?account=${a.id}`}>Review transactions</Link>.
+                  <Link
+                    href={`/transactions?account=${a.id}&from=${rec.previous.date}&to=${rec.snapshot.date}`}
+                  >
+                    Review that window
+                  </Link>
+                  .
                 </p>
               </div>
             ) : rec ? (
               <div className="muted small">
                 Reconciles: ledger matches the {rec.snapshot.source} balance on{" "}
-                {formatISO(rec.snapshot.date)}.
+                {formatISO(rec.snapshot.date)}
+                {rec.explanation ? ` (${rec.explanation})` : ""}.
               </div>
             ) : snap ? null : (
               <div className="muted small">

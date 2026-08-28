@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CategoryPicker, type CategoryOption } from "@/components/CategoryPicker";
 import { Money } from "@/components/Money";
-import { formatISO, isMonthKey } from "@/domain/dates";
+import { formatISO, isISODate, isMonthKey } from "@/domain/dates";
 import { formatCents } from "@/domain/money";
 import { listAccounts } from "@/services/accounts";
 import { listCategories } from "@/services/categories";
@@ -23,9 +23,13 @@ export default async function TransactionsPage({
   const db = getDb();
   const month = sp.month && isMonthKey(sp.month) ? sp.month : null;
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
+  const from = sp.from && isISODate(sp.from) ? sp.from : null;
+  const to = sp.to && isISODate(sp.to) ? sp.to : null;
   const filters = {
     accountId: sp.account ?? null,
     month,
+    from,
+    to,
     categoryId: sp.category ?? null,
     uncategorized: sp.uncategorized === "1",
     transfersOnly: sp.transfers === "1",
@@ -66,6 +70,19 @@ export default async function TransactionsPage({
           </p>
         </div>
       </div>
+      {from || to ? (
+        <div className="notice">
+          <p>
+            Showing transactions posted{from ? ` from ${formatISO(from)}` : ""}
+            {to ? ` through ${formatISO(to)}` : ""}
+            {sp.account
+              ? ` in ${accounts.find((a) => a.id === sp.account)?.name ?? "this account"}`
+              : ""}
+            . Look for something missing, duplicated, or posted on the wrong date.{" "}
+            <Link href={qs({ from: undefined, to: undefined })}>Show all dates</Link>.
+          </p>
+        </div>
+      ) : null}
       <form method="get" className="toolbar">
         <select name="account" defaultValue={sp.account ?? ""} className="inline">
           <option value="">All accounts</option>
@@ -94,6 +111,12 @@ export default async function TransactionsPage({
             ))}
         </select>
         <input type="text" name="q" placeholder="Search payee or memo" defaultValue={sp.q ?? ""} />
+        <label className="small muted">
+          from <input type="date" name="from" defaultValue={from ?? ""} className="inline" />
+        </label>
+        <label className="small muted">
+          to <input type="date" name="to" defaultValue={to ?? ""} className="inline" />
+        </label>
         <label className="small">
           <input
             type="checkbox"

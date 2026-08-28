@@ -96,6 +96,7 @@ export function parseCsv(text: string, profile: CsvProfile): ParseResult {
       ],
       accountsInFile: [],
       balances: [],
+      ranges: [],
     };
   }
 
@@ -143,7 +144,7 @@ export function parseCsv(text: string, profile: CsvProfile): ParseResult {
     });
   });
 
-  return { format: "csv", rows, issues, accountsInFile, balances: [] };
+  return { format: "csv", rows, issues, accountsInFile, balances: [], ranges: [] };
 }
 
 function readAmount(

@@ -2,14 +2,14 @@ import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import type { Db } from "@/db/client";
 import { accounts, categories, transactionSplits, transactions } from "@/db/schema";
-import { monthEnd, monthStart, today } from "@/domain/dates";
+import { addDays, monthEnd, monthStart, today } from "@/domain/dates";
 import {
   buildMonthReport,
   isRangeCovered,
   type MonthReport,
   type ReportLine,
 } from "@/domain/reports";
-import type { MonthKey } from "@/domain/types";
+import type { ISODate, MonthKey } from "@/domain/types";
 import { accountCoverage, listAccounts } from "./accounts";
 
 export function linesForRange(db: Db, start: string, end: string): ReportLine[] {
@@ -96,13 +96,24 @@ export function linesForRange(db: Db, start: string, end: string): ReportLine[] 
   return lines;
 }
 
-/** Is this month fully covered by imports for every on-budget account that has any imports at all? */
+/**
+ * A file exported today rarely contains today: banks post overnight and exports lag a day or
+ * two. Coverage ending within this many days of today is not a gap.
+ */
+export const COVERAGE_LAG_DAYS = 3;
+
+/**
+ * Is this month fully covered by imports for every on-budget account that has any imports at all?
+ * For the current month "fully" means through `asOf − COVERAGE_LAG_DAYS`.
+ */
 export function isMonthPartial(
   db: Db,
   month: MonthKey,
+  asOf: ISODate = today(),
 ): { partial: boolean; gaps: Array<{ accountId: string; accountName: string }> } {
   const start = monthStart(month);
-  const end = monthEnd(month) < today() ? monthEnd(month) : today();
+  const recent = addDays(asOf, -COVERAGE_LAG_DAYS);
+  const end = monthEnd(month) < recent ? monthEnd(month) : recent;
   if (start > end) return { partial: false, gaps: [] };
   const gaps: Array<{ accountId: string; accountName: string }> = [];
   for (const a of listAccounts(db)) {
