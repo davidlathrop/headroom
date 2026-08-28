@@ -9,3 +9,4 @@ package-lock.json
 .next-build
 electron/dist
 release
+video

@@ -43,6 +43,9 @@
   "exclude": [
     "node_modules",
     "data",
-    "drizzle"
+    "drizzle",
+    "video",
+    "electron/dist",
+    "release"
   ]
 }
