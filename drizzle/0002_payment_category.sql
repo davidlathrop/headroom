@@ -1,0 +1,1 @@
+ALTER TABLE `accounts` ADD `payment_category_id` text;

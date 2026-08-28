@@ -4,11 +4,13 @@ import { Stat } from "@/components/Stat";
 import { daysInMonth, formatISO, formatMonth, monthKey, splitISO, today } from "@/domain/dates";
 import { formatCents } from "@/domain/money";
 import { listAccounts } from "@/services/accounts";
+import { budgetSummaries } from "@/services/budgets";
 import { getDb } from "@/services/context";
 import { listBatches } from "@/services/imports";
 import { reconcileAccount } from "@/services/reconcile";
 import { categoryBreakdown, listMonthKeys } from "@/services/reports";
 import { queryTransactions } from "@/services/transactions";
+import { accountsNeedingPaymentCategory } from "@/services/transfers";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,8 @@ export default function HomePage() {
     .map((a) => ({ a, r: reconcileAccount(db, a.id) }))
     .filter((x) => x.r && x.r.differenceCents !== 0);
   const batches = listBatches(db, 3);
+  const budgetRows = budgetSummaries(db, month);
+  const paymentNudges = accountsNeedingPaymentCategory(db);
   const hasData = report.transactionCount > 0;
   const latestMonth = listMonthKeys(db).find((m) => m < month) ?? null;
 
@@ -88,7 +92,7 @@ export default function HomePage() {
         />
       </div>
 
-      {(uncategorized > 0 || report.partial || recon.length > 0) && (
+      {(uncategorized > 0 || report.partial || recon.length > 0 || paymentNudges.length > 0) && (
         <div className="section">
           <h2>Needs attention</h2>
           <div className="card">
@@ -111,6 +115,20 @@ export default function HomePage() {
                   <Link href="/accounts">Accounts</Link>
                 </li>
               )}
+              {paymentNudges.map((a) => (
+                <li key={a.id}>
+                  <span>
+                    <strong>{a.payments}</strong> payment{a.payments === 1 ? "" : "s"} to{" "}
+                    <strong>{a.name}</strong> count as transfers, not spending. Choose what they
+                    count as
+                    {a.kind === "loan"
+                      ? " (e.g. Housing: Rent / Mortgage)"
+                      : " (a Saving category)"}
+                    .
+                  </span>
+                  <Link href="/accounts">Accounts</Link>
+                </li>
+              ))}
               {recon.map(({ a, r }) => (
                 <li key={a.id}>
                   <span>
@@ -121,6 +139,47 @@ export default function HomePage() {
                   <Link href={`/transactions?account=${a.id}`}>Review</Link>
                 </li>
               ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {budgetRows.length > 0 && (
+        <div className="section">
+          <h2>Budgets</h2>
+          <div className="card">
+            <ul className="list">
+              {budgetRows.map((b) => {
+                const over = b.remainingCents < 0;
+                const pct = b.targetCents > 0 ? (b.targetedActualCents / b.targetCents) * 100 : 0;
+                return (
+                  <li key={b.budget.id} style={{ flexDirection: "column", gap: 6 }}>
+                    <span style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                      <Link href={`/budgets/${b.budget.id}`}>{b.budget.name}</Link>
+                      <span className="num">
+                        {b.targetCents > 0
+                          ? `${formatCents(b.targetedActualCents)} of ${formatCents(b.targetCents)}`
+                          : `${formatCents(b.actualCents)} spent`}
+                        {b.targetCents > 0 ? (
+                          <span className={`chip ${over ? "bad" : "ok"}`} style={{ marginLeft: 8 }}>
+                            {over
+                              ? `over ${formatCents(-b.remainingCents)}`
+                              : `${formatCents(b.remainingCents)} left`}
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                    {b.targetCents > 0 ? (
+                      <div
+                        className={`progress${over ? " over" : pct > (d / dim) * 100 ? " warn" : ""}`}
+                      >
+                        <span style={{ width: `${Math.min(100, pct)}%` }} />
+                        <i style={{ left: `${(d / dim) * 100}%` }} />
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </div>

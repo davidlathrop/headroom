@@ -28,6 +28,9 @@ import type { MonthKey } from "@/domain/types";
 import { logAudit } from "./audit";
 import { AppError, newId, nowIso } from "./context";
 import { createRule } from "./rules";
+import { setPaymentCategory } from "./transfers";
+
+const TRANSFER_CATEGORY = "cat-transfer";
 
 export interface TransactionFilters {
   accountId?: string | null;
@@ -172,10 +175,19 @@ export function setCategory(
   opts: { alwaysForPayee?: boolean } = {},
 ): void {
   const before = getTransaction(db, id);
-  if (before.transferId && categoryId !== "cat-transfer")
-    throw new AppError("Unlink the transfer first to categorize this transaction", "invalid");
+  let next = categoryId;
+  if (before.transferId) {
+    // Only the paying side of a transfer may carry a real category (a mortgage payment is
+    // Housing); the receiving side stays a transfer so the money is never counted twice.
+    if (before.amountCents > 0 && categoryId && categoryId !== TRANSFER_CATEGORY)
+      throw new AppError(
+        "This is the receiving side of a transfer — categorize the paying side instead",
+        "invalid",
+      );
+    next = categoryId ?? TRANSFER_CATEGORY;
+  }
   db.update(transactions)
-    .set({ categoryId, isReviewed: true, updatedAt: nowIso() })
+    .set({ categoryId: next, isReviewed: true, updatedAt: nowIso() })
     .where(eq(transactions.id, id))
     .run();
   logAudit(
@@ -184,9 +196,14 @@ export function setCategory(
     id,
     "set_category",
     { categoryId: before.categoryId },
-    { categoryId },
+    { categoryId: next },
   );
-  if (opts.alwaysForPayee && categoryId) {
+  if (opts.alwaysForPayee && before.transferId && next && next !== TRANSFER_CATEGORY) {
+    // "Always" on a transfer means: every payment into that account counts this way.
+    const link = db.select().from(transfers).where(eq(transfers.id, before.transferId)).get();
+    const other = link ? getTransaction(db, link.toTxnId) : null;
+    if (other) setPaymentCategory(db, other.accountId, next);
+  } else if (opts.alwaysForPayee && categoryId && !before.transferId) {
     createRule(
       db,
       {

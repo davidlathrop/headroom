@@ -9,7 +9,9 @@ import {
   type TransferProposal,
 } from "@/domain/transfers";
 import type { AccountKind } from "@/domain/types";
+import { getAccount } from "./accounts";
 import { logAudit } from "./audit";
+import { getCategory } from "./categories";
 import { AppError, newId, nowIso } from "./context";
 
 const TRANSFER_CATEGORY = "cat-transfer";
@@ -132,17 +134,30 @@ export function linkTransfer(
     throw new AppError("Transfer sides must be equal and opposite", "invalid");
   const id = newId();
   const ts = nowIso();
+  const out = from.amountCents < 0 ? from : to;
+  const inn = from.amountCents < 0 ? to : from;
   db.transaction((tx) => {
     tx.insert(transfers)
       .values({
         id,
-        fromTxnId: from.amountCents < 0 ? from.id : to.id,
-        toTxnId: from.amountCents < 0 ? to.id : from.id,
+        fromTxnId: out.id,
+        toTxnId: inn.id,
         confidence,
         linkedBy,
         createdAt: ts,
         updatedAt: ts,
       })
+      .run();
+    // The paying side takes the receiving account's payment category (mortgage → Housing);
+    // the receiving side is always a plain transfer, so nothing counts twice.
+    tx.update(transactions)
+      .set({
+        transferId: id,
+        categoryId: paymentCategoryFor(tx, inn.accountId),
+        isReviewed: linkedBy === "user",
+        updatedAt: ts,
+      })
+      .where(eq(transactions.id, out.id))
       .run();
     tx.update(transactions)
       .set({
@@ -151,11 +166,88 @@ export function linkTransfer(
         isReviewed: linkedBy === "user",
         updatedAt: ts,
       })
-      .where(inArray(transactions.id, [from.id, to.id]))
+      .where(eq(transactions.id, inn.id))
       .run();
   });
   logAudit(db, "transfer", id, "link", undefined, { fromTxnId, toTxnId, linkedBy, confidence });
   return id;
+}
+
+function paymentCategoryFor(db: Db, accountId: string): string {
+  const a = db
+    .select({ paymentCategoryId: accounts.paymentCategoryId })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .get();
+  return a?.paymentCategoryId ?? TRANSFER_CATEGORY;
+}
+
+/**
+ * "Money sent to this account counts as …". Stores the choice on the account and re-applies it to
+ * the paying side of every transfer already linked into the account (null = back to a plain
+ * transfer). Returns how many transactions were recategorized.
+ */
+export function setPaymentCategory(db: Db, accountId: string, categoryId: string | null): number {
+  const before = getAccount(db, accountId);
+  if (categoryId) {
+    const c = getCategory(db, categoryId);
+    if (c.flow !== "expense" && c.flow !== "saving")
+      throw new AppError("Payments can only count as an expense or saving category", "invalid");
+  }
+  const ts = nowIso();
+  const paying = db
+    .select({ id: transfers.fromTxnId })
+    .from(transfers)
+    .innerJoin(transactions, eq(transactions.id, transfers.toTxnId))
+    .where(eq(transactions.accountId, accountId))
+    .all()
+    .map((r) => r.id);
+  db.transaction((tx) => {
+    tx.update(accounts)
+      .set({ paymentCategoryId: categoryId, updatedAt: ts })
+      .where(eq(accounts.id, accountId))
+      .run();
+    if (paying.length)
+      tx.update(transactions)
+        .set({ categoryId: categoryId ?? TRANSFER_CATEGORY, updatedAt: ts })
+        .where(inArray(transactions.id, paying))
+        .run();
+  });
+  logAudit(
+    db,
+    "account",
+    accountId,
+    "set_payment_category",
+    { paymentCategoryId: before.paymentCategoryId },
+    { paymentCategoryId: categoryId, recategorized: paying.length },
+  );
+  return paying.length;
+}
+
+/** Loan / investment accounts receiving linked transfers with no payment category yet — worth a nudge. */
+export function accountsNeedingPaymentCategory(
+  db: Db,
+): Array<{ id: string; name: string; kind: AccountKind; payments: number }> {
+  const rows = db
+    .select({
+      id: accounts.id,
+      name: accounts.name,
+      kind: accounts.kind,
+      payments: sql<number>`count(*)`,
+    })
+    .from(transfers)
+    .innerJoin(transactions, eq(transactions.id, transfers.toTxnId))
+    .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+    .where(
+      and(
+        isNull(accounts.paymentCategoryId),
+        isNull(accounts.archivedAt),
+        inArray(accounts.kind, ["loan", "investment"]),
+      ),
+    )
+    .groupBy(accounts.id)
+    .all();
+  return rows;
 }
 
 export function unlinkTransfer(db: Db, transferId: string): void {

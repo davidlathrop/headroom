@@ -43,7 +43,22 @@ export interface MonthReport {
 }
 
 /**
- * Roll up one month. Transfers and ignore-flow lines contribute nothing.
+ * Does a line count toward Income / Spend / Saved? Off-budget accounts, transfer and ignore flows
+ * never do. A linked transfer normally doesn't either — unless its *paying* side was given a real
+ * category: a mortgage payment to a tracked loan is Housing spend, a contribution to a tracked
+ * brokerage is Saved. The receiving side of a transfer never counts, so nothing is double counted.
+ */
+export function countsInReport(
+  l: Pick<ReportLine, "accountOnBudget" | "isTransfer" | "flow" | "categoryId" | "amountCents">,
+): boolean {
+  if (!l.accountOnBudget) return false;
+  if (l.flow === "transfer" || l.flow === "ignore") return false;
+  if (l.isTransfer) return l.categoryId != null && l.flow != null && l.amountCents < 0;
+  return true;
+}
+
+/**
+ * Roll up one month. Transfers and ignore-flow lines contribute nothing (see countsInReport).
  * Uncategorized lines are reported separately and counted in Spend (outflows) / Income (inflows)
  * so the headline never silently hides money — but they are flagged.
  */
@@ -62,8 +77,7 @@ export function buildMonthReport(
   const txnIds = new Set<string>();
 
   for (const l of lines) {
-    if (!l.accountOnBudget) continue;
-    if (l.isTransfer || l.flow === "transfer" || l.flow === "ignore") continue;
+    if (!countsInReport(l)) continue;
     txnIds.add(l.transactionId);
 
     if (l.categoryId == null || l.flow == null) {

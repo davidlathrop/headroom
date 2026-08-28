@@ -105,10 +105,12 @@ function XLabels({
   f: Frame;
 }) {
   const every = labels.length > 20 ? 5 : labels.length > 14 ? 3 : labels.length > 8 ? 2 : 1;
+  // The last label always shows; a cadence label too close to it is dropped so they never collide.
+  const last = labels.length - 1;
   return (
     <>
       {labels.map((l, i) =>
-        i % every === 0 || i === labels.length - 1 ? (
+        i === last || (i % every === 0 && i < last - every / 2) ? (
           <text key={i} x={xCenter(i)} y={f.H - 10} textAnchor="middle" fill="var(--muted)">
             {l}
           </text>
@@ -255,6 +257,7 @@ export function Columns({
   mode,
   subtitle,
   width = 860,
+  refLine,
 }: {
   title: string;
   data: ColumnDatum[];
@@ -262,12 +265,14 @@ export function Columns({
   mode: "grouped" | "stacked";
   subtitle?: string;
   width?: number;
+  /** A dashed horizontal reference (a target, a budget) drawn across the whole chart. */
+  refLine?: { value: number; label: string };
 }) {
   const f = width < 600 ? NARROW : FRAME;
   const [hover, setHover] = useState<number | null>(null);
   const id = useId();
   const { yOf, ticks, xCenter, band } = useMemo(() => {
-    let hi = 0;
+    let hi = refLine ? refLine.value : 0;
     for (const d of data) {
       if (mode === "stacked")
         hi = Math.max(
@@ -279,7 +284,7 @@ export function Columns({
     const sc = yScale(0, hi, f);
     const band = (f.W - f.padL - f.padR) / Math.max(1, data.length);
     return { ...sc, band, xCenter: (i: number) => f.padL + band * (i + 0.5) };
-  }, [data, series, mode, f]);
+  }, [data, series, mode, f, refLine]);
   const colW = Math.min(24, mode === "grouped" ? (band * 0.7) / series.length : band * 0.6);
   const h = hover != null ? data[hover] : null;
   const clickable = data.some((d) => d.href || d.segmentHrefs);
@@ -374,6 +379,30 @@ export function Columns({
           stroke="var(--muted)"
           strokeWidth={1}
         />
+        {refLine ? (
+          <g>
+            <line
+              x1={f.padL}
+              x2={f.W - f.padR}
+              y1={yOf(refLine.value)}
+              y2={yOf(refLine.value)}
+              stroke="var(--amber)"
+              strokeWidth={1.5}
+              strokeDasharray="5 4"
+            />
+            <text
+              x={f.W - f.padR}
+              y={yOf(refLine.value) - 5}
+              textAnchor="end"
+              fill="var(--amber)"
+              stroke="var(--surface)"
+              strokeWidth={3}
+              paintOrder="stroke"
+            >
+              {refLine.label} {compact(refLine.value)}
+            </text>
+          </g>
+        ) : null}
         <XLabels labels={data.map((d) => d.label)} xCenter={xCenter} f={f} />
       </svg>
       {h && hover != null ? (
@@ -541,6 +570,10 @@ export function HBars({
     value: number;
     detail?: Array<{ label: string; value: number }>;
     href?: string;
+    /** Overrides the chart color for this bar (e.g. to mute bars outside a selection). */
+    color?: string;
+    /** Appended after the value label ("42%"). */
+    suffix?: string;
   }>;
   subtitle?: string;
   color?: string;
@@ -590,11 +623,12 @@ export function HBars({
                 </text>
                 <path
                   d={`M${padL},${y} H${padL + w - r} Q${padL + w},${y} ${padL + w},${y + r} V${y + 20 - r} Q${padL + w},${y + 20} ${padL + w - r},${y + 20} H${padL} Z`}
-                  fill={color}
+                  fill={d.color ?? color}
                   opacity={hover != null && hover !== i ? 0.55 : 1}
                 />
                 <text x={padL + w + 8} y={y + 14} fill="var(--ink)">
                   {formatCents(d.value)}
+                  {d.suffix ? <tspan fill="var(--muted)"> {d.suffix}</tspan> : null}
                 </text>
               </g>
             </MaybeLink>

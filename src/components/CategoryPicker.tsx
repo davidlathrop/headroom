@@ -13,11 +13,14 @@ export function CategoryPicker({
   value,
   options,
   payeeDisplay,
+  alwaysTitle,
 }: {
   txnId: string;
   value: string | null;
   options: CategoryOption[];
   payeeDisplay: string;
+  /** Tooltip for the "always" box; defaults to the payee-rule wording. */
+  alwaysTitle?: string;
 }) {
   const [current, setCurrent] = useState(value ?? "");
   const [always, setAlways] = useState(false);
@@ -55,7 +58,7 @@ export function CategoryPicker({
       </select>
       <label
         className="small muted"
-        title={`Create a rule so every “${payeeDisplay}” gets this category`}
+        title={alwaysTitle ?? `Create a rule so every “${payeeDisplay}” gets this category`}
       >
         <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />{" "}
         always

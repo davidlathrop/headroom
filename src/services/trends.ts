@@ -8,7 +8,7 @@ import {
   splitISO,
   today,
 } from "@/domain/dates";
-import type { MonthReport, ReportLine } from "@/domain/reports";
+import { countsInReport, type MonthReport, type ReportLine } from "@/domain/reports";
 import { listAccounts } from "./accounts";
 import { listCategories } from "./categories";
 import { accountBalance } from "./reconcile";
@@ -72,7 +72,7 @@ function groupIndex(db: Db): Map<string, { groupId: string; groupName: string }>
 
 /** Spend lines only: expense flow or uncategorized outflows, on-budget, no transfers. */
 function isSpendLine(l: ReportLine): boolean {
-  if (!l.accountOnBudget || l.isTransfer) return false;
+  if (!countsInReport(l)) return false;
   if (l.flow === "expense") return true;
   return l.flow == null && l.amountCents < 0;
 }

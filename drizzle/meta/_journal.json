@@ -8,6 +8,20 @@
       "when": 1787752883150,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787934956252,
+      "tag": "0001_budgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787935967406,
+      "tag": "0002_payment_category",
+      "breakpoints": true
     }
   ]
 }

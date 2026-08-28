@@ -9,9 +9,18 @@ export type Db = BetterSQLite3Database<typeof schema>;
 
 /**
  * One connection per process. Next.js dev reloads modules, so the instance is parked on globalThis.
- * Migrations run on first open; the app never starts against an unmigrated file.
+ * Migrations run on first open — and again whenever this module is re-evaluated (a dev hot
+ * reload), so a migration added while `next dev` is running is applied to the cached connection
+ * instead of waiting for a restart. `migrate` is idempotent: it only runs entries newer than the
+ * last one recorded in `__drizzle_migrations`.
  */
 const g = globalThis as unknown as { __headroomDb?: Db; __headroomSqlite?: Database.Database };
+let migratedThisModule = false;
+
+function runMigrations(db: Db): void {
+  migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
+  migratedThisModule = true;
+}
 
 export function getDbPath(): string {
   return process.env.HEADROOM_DB ?? path.join(process.cwd(), "data", "headroom.sqlite");
@@ -22,14 +31,17 @@ export function getImportDir(): string {
 }
 
 export function openDb(filePath = getDbPath()): Db {
-  if (g.__headroomDb) return g.__headroomDb;
+  if (g.__headroomDb) {
+    if (!migratedThisModule) runMigrations(g.__headroomDb);
+    return g.__headroomDb;
+  }
   if (filePath !== ":memory:") fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const sqlite = new Database(filePath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
   sqlite.pragma("busy_timeout = 5000");
   const db = drizzle(sqlite, { schema });
-  migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
+  runMigrations(db);
   g.__headroomDb = db;
   g.__headroomSqlite = sqlite;
   return db;

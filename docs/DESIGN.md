@@ -179,8 +179,12 @@ recurring_series
 planned_items                          -- future one-offs you know about (trip, tax bill, bonus)
   name, amount_cents, date, category_id, note
 
-budget_targets                         -- v3: optional monthly targets per category
-  category_id, month, target_cents
+budgets                                -- a named set of categories to watch ("Essentials")
+  name, note, archived_at
+
+budget_categories                      -- one line per watched category; a group line counts all its leaves
+  budget_id, category_id, target_cents?, sort_order    -- target is monthly; null = track only
+  UNIQUE(budget_id, category_id)
 
 audit_log                              -- every user-driven change to money-affecting data
   entity, entity_id, action, before_json, after_json, at
@@ -328,6 +332,7 @@ Spend is broken out as **Fixed** (commitments: `spend_type = fixed`) and **Varia
 | Rule | Consequence |
 |---|---|
 | Transfers between your accounts are neither income nor spend | Paying the credit card doesn't "spend" $2,400 again; moving $500 to savings doesn't lower your leftover |
+| …except that a transfer's *paying* side may carry a real category | A mortgage payment to a tracked loan is `Housing: Rent / Mortgage`; a contribution to a tracked brokerage is Saved. Set once per account ("money sent here counts as…") or per transaction; the receiving side always stays a transfer, so nothing counts twice |
 | Spend is recognized when you swipe the card, not when you pay it | Monthly spend reflects what you bought that month; the card payment is a transfer |
 | A refund is a negative expense in its category, not income | Returning a $80 jacket puts Clothing back to where it was; income is unchanged |
 | Income counts only what enters the budget from outside | Interest, salary, reimbursements; not a transfer from savings |
@@ -348,7 +353,7 @@ score += 0.3 if this account pair has ≥ 2 confirmed transfers before
 score += 0.2 if one side is a credit_card/loan account and the other is checking
 ```
 
-Score ≥ 0.7 → auto-link (`linked_by = auto`, visible and reversible). 0.4–0.7 → suggested on the review queue. A transfer whose other side is in an account you don't import (mortgage at another bank) is not a transfer; categorize it as an expense (`Housing: Mortgage`) or as `saving` (contribution to an outside brokerage).
+Score ≥ 0.7 → auto-link (`linked_by = auto`, visible and reversible). 0.4–0.7 → suggested on the review queue. A transfer whose other side is in an account you don't import (mortgage at another bank) is not a transfer; categorize it as an expense (`Housing: Mortgage`) or as `saving` (contribution to an outside brokerage). If you *do* track the loan or brokerage, set `accounts.payment_category_id` on it: linking then puts that category on the paying side (`countsInReport` in `reports.ts` is the single rule that admits such lines), while the receiving side stays `Transfer`.
 
 ---
 
@@ -435,6 +440,7 @@ Ranges (v3): show p25–p75 of the trailing distribution per variable category a
 4. **Months** — one row per month: Income, Fixed, Variable, Saved, Left over, Savings rate; partial-month badge; drill into category breakdown; 12-month trend.
 5. **Forecast** — 12-month projection table + chart; 60-day cash curve with lowest-point callout; recurring series manager; planned items; what-if panel.
 6. **Accounts** — balances (computed vs last snapshot), last import, coverage bar, reconcile.
+6b. **Budgets** — named sets of categories, with or without monthly targets. Pick any month: dollars per line, share of the budget, change vs the month before, and a strip of recent months; with targets, what’s left and an on-pace marker; an *Over time* section (3/6/12 months ending at the viewed month) charts the budget stacked by category with the target as a reference line, the budget vs all spending, and a breakdown of every expense category with the budget's own highlighted. This month shows a summary.
 7. **Settings** — categories tree, rules, import profiles, buffer & forecast window, backup now / restore.
 
 ---
@@ -469,7 +475,7 @@ Accounts · import profiles (OFX, generic CSV with mapping UI, YNAB) · full ded
 Balance snapshots + reconciliation alerts · recurring-series detection and review · forecast engine · Forecast screen with 60-day cash curve and safe-to-spend · Accounts screen.
 
 **Phase 3 — Polish and planning.**
-Planned items · what-if panel · projection ranges · budget targets (optional) · backups UI · exports (CSV of anything) · rule import/export.
+Planned items (done) · budgets with category targets (done, §9 6b) · what-if panel · projection ranges · backups UI · exports (CSV of anything) · rule import/export.
 
 ---
 

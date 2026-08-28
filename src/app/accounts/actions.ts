@@ -6,6 +6,7 @@ import { ACCOUNT_KINDS } from "@/domain/types";
 import { archiveAccount, createAccount, updateAccount } from "@/services/accounts";
 import { getDb } from "@/services/context";
 import { addSnapshot } from "@/services/reconcile";
+import { setPaymentCategory } from "@/services/transfers";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -44,4 +45,18 @@ export async function addSnapshotAction(fd: FormData) {
   addSnapshot(getDb(), str(fd, "id"), date, cents, "statement");
   revalidatePath("/accounts");
   revalidatePath("/");
+}
+
+export async function setPaymentCategoryAction(fd: FormData) {
+  setPaymentCategory(getDb(), str(fd, "id"), str(fd, "paymentCategoryId") || null);
+  for (const p of [
+    "/",
+    "/accounts",
+    "/transactions",
+    "/months",
+    "/budgets",
+    "/trends",
+    "/forecast",
+  ])
+    revalidatePath(p);
 }

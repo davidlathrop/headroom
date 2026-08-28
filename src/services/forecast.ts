@@ -7,6 +7,7 @@ import {
   type ForecastSeries,
 } from "@/domain/forecast";
 import { median } from "@/domain/money";
+import { countsInReport } from "@/domain/reports";
 import { listAccounts } from "./accounts";
 import { listCategories } from "./categories";
 import { listPlanned } from "./planned";
@@ -105,9 +106,7 @@ export function forecastView(db: Db, asOf = today(), months = 12): ForecastView 
   completeMonths.push(...partialMonthsUsed);
   completeMonths.sort((a, b) => (a < b ? 1 : -1));
   const perMonth = completeMonths.map((m) =>
-    linesForRange(db, monthStart(m), monthEnd(m)).filter(
-      (l) => l.accountOnBudget && !l.isTransfer && l.flow !== "transfer" && l.flow !== "ignore",
-    ),
+    linesForRange(db, monthStart(m), monthEnd(m)).filter(countsInReport),
   );
   const cashAccountIds = new Set(
     accounts.filter((a) => a.kind === "checking" || a.kind === "savings").map((a) => a.id),
@@ -146,9 +145,7 @@ export function forecastView(db: Db, asOf = today(), months = 12): ForecastView 
     .sort((a, b) => b.medianCents - a.medianCents);
 
   // Current month actuals.
-  const curLines = linesForRange(db, monthStart(thisMonth), asOf).filter(
-    (l) => l.accountOnBudget && !l.isTransfer && l.flow !== "transfer" && l.flow !== "ignore",
-  );
+  const curLines = linesForRange(db, monthStart(thisMonth), asOf).filter(countsInReport);
   const curVar = new Map<string | null, number>();
   let curIncome = 0,
     curFixed = 0,

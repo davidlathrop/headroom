@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMonthReport, isRangeCovered, type ReportLine } from "./reports";
+import { buildMonthReport, countsInReport, isRangeCovered, type ReportLine } from "./reports";
 
 function line(p: Partial<ReportLine> & { transactionId: string; amountCents: number }): ReportLine {
   return {
@@ -124,5 +124,57 @@ describe("isRangeCovered", () => {
       ),
     ).toBe(true);
     expect(isRangeCovered([], "2026-01-01", "2026-01-31")).toBe(false);
+  });
+});
+
+describe("countsInReport — categorized transfers", () => {
+  it("counts a transfer's paying side once it carries a real category, never the receiving side", () => {
+    const mortgage = line({
+      transactionId: "pay",
+      amountCents: -189739,
+      isTransfer: true,
+      categoryId: "rent",
+      categoryName: "Rent / Mortgage",
+      parentCategoryName: "Housing",
+      spendType: "fixed",
+    });
+    const received = line({
+      transactionId: "recv",
+      amountCents: 189739,
+      isTransfer: true,
+      accountId: "loan",
+      categoryId: "rent",
+      categoryName: "Rent / Mortgage",
+      parentCategoryName: "Housing",
+    });
+    const plain = line({
+      transactionId: "card",
+      amountCents: -240000,
+      isTransfer: true,
+      categoryId: "cat-transfer",
+      categoryName: "Transfer",
+      parentCategoryName: null,
+      flow: "transfer",
+    });
+    const unlabelled = line({
+      transactionId: "x",
+      amountCents: -100,
+      isTransfer: true,
+      categoryId: null,
+      categoryName: null,
+      flow: null,
+    });
+    expect(countsInReport(mortgage)).toBe(true);
+    expect(countsInReport(received)).toBe(false);
+    expect(countsInReport(plain)).toBe(false);
+    expect(countsInReport(unlabelled)).toBe(false);
+    expect(countsInReport({ ...mortgage, accountOnBudget: false })).toBe(false);
+
+    const r = buildMonthReport("2026-03", [mortgage, received, plain, unlabelled], false);
+    expect(r.spendFixedCents).toBe(189739);
+    expect(r.spendCents).toBe(189739);
+    expect(r.incomeCents).toBe(0);
+    expect(r.transactionCount).toBe(1);
+    expect(r.byCategory.map((c) => c.name)).toEqual(["Rent / Mortgage"]);
   });
 });

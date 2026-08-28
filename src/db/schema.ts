@@ -1,12 +1,4 @@
-import {
-  index,
-  integer,
-  primaryKey,
-  real,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { ACCOUNT_KINDS, FLOWS, SPEND_TYPES } from "@/domain/types";
 
 const id = () => text("id").primaryKey();
@@ -27,6 +19,12 @@ export const accounts = sqliteTable("accounts", {
   defaultProfileId: text("default_profile_id"),
   /** Account identifier as it appears in files (OFX ACCTID, YNAB account name) for auto-mapping. */
   externalLabel: text("external_label"),
+  /**
+   * What money sent *into* this account counts as on the paying side: null = a plain transfer
+   * (card payments, moving cash); an expense category for a tracked loan (mortgage → Housing);
+   * a saving category for a tracked brokerage. Applied to every linked transfer into the account.
+   */
+  paymentCategoryId: text("payment_category_id"),
   archivedAt: text("archived_at"),
   ...timestamps,
 });
@@ -217,14 +215,30 @@ export const plannedItems = sqliteTable("planned_items", {
   ...timestamps,
 });
 
-export const budgetTargets = sqliteTable(
-  "budget_targets",
+/** A named set of categories to watch against monthly targets ("Essentials", "Fun money"). */
+export const budgets = sqliteTable("budgets", {
+  id: id(),
+  name: text("name").notNull(),
+  note: text("note").notNull().default(""),
+  archivedAt: text("archived_at"),
+  ...timestamps,
+});
+
+/** One category in a budget. `target_cents` is the monthly target; null = tracked, no target. */
+export const budgetCategories = sqliteTable(
+  "budget_categories",
   {
+    id: id(),
+    budgetId: text("budget_id").notNull(),
     categoryId: text("category_id").notNull(),
-    month: text("month").notNull(),
-    targetCents: integer("target_cents").notNull(),
+    targetCents: integer("target_cents"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...timestamps,
   },
-  (t) => [primaryKey({ columns: [t.categoryId, t.month] })],
+  (t) => [
+    uniqueIndex("budget_categories_budget_category_idx").on(t.budgetId, t.categoryId),
+    index("budget_categories_category_idx").on(t.categoryId),
+  ],
 );
 
 export const auditLog = sqliteTable("audit_log", {
@@ -250,3 +264,5 @@ export type Category = typeof categories.$inferSelect;
 export type CategoryRuleRow = typeof categoryRules.$inferSelect;
 export type Transfer = typeof transfers.$inferSelect;
 export type BalanceSnapshot = typeof balanceSnapshots.$inferSelect;
+export type Budget = typeof budgets.$inferSelect;
+export type BudgetCategory = typeof budgetCategories.$inferSelect;

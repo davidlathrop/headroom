@@ -61,7 +61,8 @@ export default async function TransactionsPage({
           <h1>Transactions</h1>
           <p className="sub">
             {total} matching. Change a category inline; tick “always” to make it a rule for that
-            payee.
+            payee. A transfer’s paying side can take a category too (a mortgage payment is Housing);
+            “always” then applies it to every payment into that account.
           </p>
         </div>
       </div>
@@ -159,9 +160,32 @@ export default async function TransactionsPage({
                 </td>
                 <td className="small">{t.accountName}</td>
                 <td>
-                  {t.transferId ? (
+                  {t.transferId && t.amountCents > 0 ? (
                     <span className="chip ok">
-                      Transfer{t.counterpartAccountName ? ` ↔ ${t.counterpartAccountName}` : ""}
+                      Transfer{t.counterpartAccountName ? ` ← ${t.counterpartAccountName}` : ""}
+                    </span>
+                  ) : t.transferId ? (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        gap: 6,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <CategoryPicker
+                        txnId={t.id}
+                        value={t.categoryId}
+                        options={options}
+                        payeeDisplay={t.payeeDisplay}
+                        alwaysTitle={`Count every payment to ${t.counterpartAccountName ?? "that account"} this way`}
+                      />
+                      <span
+                        className="chip ok"
+                        title="Linked transfer; pick a category to count it as spend"
+                      >
+                        → {t.counterpartAccountName ?? "transfer"}
+                      </span>
                     </span>
                   ) : (
                     <CategoryPicker
