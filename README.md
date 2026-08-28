@@ -2,6 +2,8 @@
 
 A personal budget and cash-flow app. Import the CSV/OFX/QFX exports from your bank and credit card; Headroom tells you what came in, what went out, and what's left — without ever double counting a transaction.
 
+![Headroom walkthrough — import, categorize, budgets, forecast, trends](docs/headroom-demo.gif)
+
 The design is in [`docs/DESIGN.md`](docs/DESIGN.md). Phases 1 and 2 are built: import with three-layer dedupe, categorization rules, transfer linking, monthly reports with reconciliation, recurring-series detection, a 12-month forecast, a 60-day cash curve and safe-to-spend. Phase 3 (what-if, projection ranges, budget targets, backups UI) is next.
 
 ## Run it
