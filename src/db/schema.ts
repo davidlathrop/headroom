@@ -107,6 +107,11 @@ export const transactions = sqliteTable(
     categoryId: text("category_id"),
     transferId: text("transfer_id"),
     isReviewed: integer("is_reviewed", { mode: "boolean" }).notNull().default(false),
+    /**
+     * An outlier keeps its category and counts in its own month, but is left out of anything that
+     * generalizes across months (trends, forecast statistics): a one-off tax bill, a bonus.
+     */
+    isOutlier: integer("is_outlier", { mode: "boolean" }).notNull().default(false),
     notes: text("notes").notNull().default(""),
     deletedAt: text("deleted_at"),
     ...timestamps,

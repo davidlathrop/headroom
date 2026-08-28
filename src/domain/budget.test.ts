@@ -28,6 +28,7 @@ function line(
     flow: categoryId ? "expense" : null,
     spendType: "variable",
     isTransfer: false,
+    isOutlier: false,
     ...extra,
   };
 }

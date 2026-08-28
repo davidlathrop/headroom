@@ -1,11 +1,20 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/services/context";
-import { setCategory, setPayeeDisplay } from "@/services/transactions";
+import { setCategory, setOutlier, setPayeeDisplay } from "@/services/transactions";
 import { linkTransfer, unlinkTransfer } from "@/services/transfers";
 
 function refresh() {
-  for (const p of ["/", "/transactions", "/months", "/accounts"]) revalidatePath(p);
+  for (const p of [
+    "/",
+    "/transactions",
+    "/months",
+    "/accounts",
+    "/trends",
+    "/forecast",
+    "/budgets",
+  ])
+    revalidatePath(p);
 }
 
 export async function setCategoryAction(
@@ -39,5 +48,11 @@ export async function linkTransferAction(fd: FormData) {
 export async function unlinkTransferAction(fd: FormData) {
   const id = String(fd.get("transferId") ?? "");
   if (id) unlinkTransfer(getDb(), id);
+  refresh();
+}
+
+export async function setOutlierAction(fd: FormData) {
+  const id = String(fd.get("id") ?? "");
+  if (id) setOutlier(getDb(), id, String(fd.get("isOutlier")) === "1");
   refresh();
 }

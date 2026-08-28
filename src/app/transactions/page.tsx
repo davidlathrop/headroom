@@ -9,7 +9,12 @@ import { getDb } from "@/services/context";
 import { listMonthKeys } from "@/services/reports";
 import { queryTransactions } from "@/services/transactions";
 import { transferCandidatesFor } from "@/services/transferCandidates";
-import { linkTransferAction, renamePayeeAction, unlinkTransferAction } from "./actions";
+import {
+  linkTransferAction,
+  renamePayeeAction,
+  setOutlierAction,
+  unlinkTransferAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 const PAGE = 150;
@@ -33,6 +38,7 @@ export default async function TransactionsPage({
     categoryId: sp.category ?? null,
     uncategorized: sp.uncategorized === "1",
     transfersOnly: sp.transfers === "1",
+    outliersOnly: sp.outliers === "1",
     search: sp.q ?? null,
     limit: PAGE,
     offset: (page - 1) * PAGE,
@@ -66,7 +72,9 @@ export default async function TransactionsPage({
           <p className="sub">
             {total} matching. Change a category inline; tick “always” to make it a rule for that
             payee. A transfer’s paying side can take a category too (a mortgage payment is Housing);
-            “always” then applies it to every payment into that account.
+            “always” then applies it to every payment into that account. Flag a one-off as an{" "}
+            <em>outlier</em> and it keeps its category and its month but stays out of trends and the
+            forecast.
           </p>
         </div>
       </div>
@@ -134,6 +142,10 @@ export default async function TransactionsPage({
             defaultChecked={filters.transfersOnly}
           />{" "}
           transfers
+        </label>
+        <label className="small">
+          <input type="checkbox" name="outliers" value="1" defaultChecked={filters.outliersOnly} />{" "}
+          outliers
         </label>
         <button className="btn small">Filter</button>
         <Link href="/transactions" className="small">
@@ -222,8 +234,33 @@ export default async function TransactionsPage({
                 </td>
                 <td className="num">
                   <Money cents={t.amountCents} />
+                  {t.isOutlier ? (
+                    <span className="cell-sub">
+                      <span
+                        className="chip warn"
+                        title="Counts this month; left out of trends and forecast"
+                      >
+                        outlier
+                      </span>
+                    </span>
+                  ) : null}
                 </td>
                 <td className="small">
+                  <form action={setOutlierAction} style={{ display: "inline" }}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <input type="hidden" name="isOutlier" value={t.isOutlier ? "0" : "1"} />
+                    <button
+                      className="btn link small muted"
+                      title={
+                        t.isOutlier
+                          ? "Count this in trends and the forecast again"
+                          : "Keep the category and the month, but leave it out of trends and the forecast"
+                      }
+                    >
+                      {t.isOutlier ? "not an outlier" : "outlier?"}
+                    </button>
+                  </form>
+                  {" · "}
                   {t.transferId ? (
                     <form action={unlinkTransferAction}>
                       <input type="hidden" name="transferId" value={t.transferId} />

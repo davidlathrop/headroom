@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import * as schema from "./schema";
 
@@ -22,12 +23,49 @@ function runMigrations(db: Db): void {
   migratedThisModule = true;
 }
 
+/**
+ * Where Headroom keeps its data: `~/.headroom` by default (HEADROOM_DATA_DIR to move it), with
+ * the database and the uploaded files beside each other. HEADROOM_DB / HEADROOM_IMPORT_DIR
+ * override each individually (tests, the demo).
+ */
+export function getDataDir(): string {
+  return process.env.HEADROOM_DATA_DIR ?? path.join(os.homedir(), ".headroom");
+}
+
 export function getDbPath(): string {
-  return process.env.HEADROOM_DB ?? path.join(process.cwd(), "data", "headroom.sqlite");
+  return process.env.HEADROOM_DB ?? path.join(getDataDir(), "headroom.sqlite");
 }
 
 export function getImportDir(): string {
-  return process.env.HEADROOM_IMPORT_DIR ?? path.join(process.cwd(), "data", "imports");
+  return process.env.HEADROOM_IMPORT_DIR ?? path.join(getDataDir(), "imports");
+}
+
+/**
+ * Data used to live in `./data` under the project. On the first open at the new location, copy
+ * it there — a consistent snapshot via VACUUM INTO (safe even if another process has the old
+ * file open), plus the uploaded files — and leave the original in place. Returns true if it did.
+ */
+export function adoptLegacyData(
+  target: { dbPath: string; importDir: string },
+  legacyDir = path.join(process.cwd(), "data"),
+): boolean {
+  if (target.dbPath === ":memory:" || fs.existsSync(target.dbPath)) return false;
+  const legacyDb = path.join(legacyDir, "headroom.sqlite");
+  if (!fs.existsSync(legacyDb)) return false;
+  fs.mkdirSync(path.dirname(target.dbPath), { recursive: true });
+  const src = new Database(legacyDb, { readonly: true });
+  try {
+    src.exec(`VACUUM INTO '${target.dbPath.replace(/'/g, "''")}'`);
+  } finally {
+    src.close();
+  }
+  const legacyImports = path.join(legacyDir, "imports");
+  if (fs.existsSync(legacyImports) && !fs.existsSync(target.importDir))
+    fs.cpSync(legacyImports, target.importDir, { recursive: true });
+  console.log(
+    `[headroom] copied ${legacyDb} → ${target.dbPath} (and imports); the originals were left in place`,
+  );
+  return true;
 }
 
 export function openDb(filePath = getDbPath()): Db {
@@ -35,7 +73,10 @@ export function openDb(filePath = getDbPath()): Db {
     if (!migratedThisModule) runMigrations(g.__headroomDb);
     return g.__headroomDb;
   }
-  if (filePath !== ":memory:") fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  if (filePath !== ":memory:") {
+    if (!process.env.HEADROOM_DB) adoptLegacyData({ dbPath: filePath, importDir: getImportDir() });
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  }
   const sqlite = new Database(filePath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");

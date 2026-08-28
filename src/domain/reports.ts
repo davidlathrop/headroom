@@ -13,6 +13,8 @@ export interface ReportLine {
   flow: Flow | null;
   spendType: SpendType | null;
   isTransfer: boolean;
+  /** Flagged one-off: counts in its month, left out of cross-month statistics. */
+  isOutlier: boolean;
 }
 
 export interface CategoryTotal {
@@ -40,6 +42,8 @@ export interface MonthReport {
   transactionCount: number;
   byCategory: CategoryTotal[];
   partial: boolean;
+  /** How much of the headline came from flagged outliers (included above; reported so it can be shown). */
+  outliers: { count: number; incomeCents: Cents; spendCents: Cents; savedCents: Cents };
 }
 
 /**
@@ -75,10 +79,18 @@ export function buildMonthReport(
     uncatCount = 0;
   const byCat = new Map<string, CategoryTotal>();
   const txnIds = new Set<string>();
+  const outliers = { count: 0, incomeCents: 0, spendCents: 0, savedCents: 0 };
 
   for (const l of lines) {
     if (!countsInReport(l)) continue;
     txnIds.add(l.transactionId);
+    if (l.isOutlier) {
+      outliers.count++;
+      if (l.flow === "income" || (l.flow == null && l.amountCents > 0))
+        outliers.incomeCents += l.amountCents;
+      else if (l.flow === "saving") outliers.savedCents += -l.amountCents;
+      else outliers.spendCents += -l.amountCents;
+    }
 
     if (l.categoryId == null || l.flow == null) {
       uncatCount++;
@@ -158,6 +170,7 @@ export function buildMonthReport(
       (a, b) => Math.abs(b.amountCents) - Math.abs(a.amountCents),
     ),
     partial,
+    outliers,
   };
 }
 

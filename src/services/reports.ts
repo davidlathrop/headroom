@@ -67,6 +67,7 @@ export function linesForRange(db: Db, start: string, end: string): ReportLine[] 
       accountOnBudget: r.onBudget,
       postedDate: t.postedDate,
       isTransfer: t.transferId != null,
+      isOutlier: t.isOutlier,
     };
     const ss = splitsByTxn.get(t.id);
     if (ss && ss.length) {
@@ -133,8 +134,10 @@ export function isMonthPartial(
 export function monthReport(
   db: Db,
   month: MonthKey,
+  opts: { excludeOutliers?: boolean } = {},
 ): MonthReport & { gaps: Array<{ accountId: string; accountName: string }> } {
-  const lines = linesForRange(db, monthStart(month), monthEnd(month));
+  let lines = linesForRange(db, monthStart(month), monthEnd(month));
+  if (opts.excludeOutliers) lines = lines.filter((l) => !l.isOutlier);
   const { partial, gaps } = isMonthPartial(db, month);
   return { ...buildMonthReport(month, lines, partial), gaps };
 }
@@ -151,15 +154,23 @@ export function listMonthKeys(db: Db): MonthKey[] {
   return rows.map((r) => r.m);
 }
 
-export function listMonthReports(db: Db, limit = 24): MonthReport[] {
+export function listMonthReports(
+  db: Db,
+  limit = 24,
+  opts: { excludeOutliers?: boolean } = {},
+): MonthReport[] {
   return listMonthKeys(db)
     .slice(0, limit)
-    .map((m) => monthReport(db, m));
+    .map((m) => monthReport(db, m, opts));
 }
 
 /** Spend by category for one month, grouped by parent for display. */
-export function categoryBreakdown(db: Db, month: MonthKey) {
-  const r = monthReport(db, month);
+export function categoryBreakdown(
+  db: Db,
+  month: MonthKey,
+  opts: { excludeOutliers?: boolean } = {},
+) {
+  const r = monthReport(db, month, opts);
   const groups = new Map<
     string,
     { name: string; amountCents: number; flow: string | null; items: typeof r.byCategory }

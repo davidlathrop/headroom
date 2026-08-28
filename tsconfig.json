@@ -34,13 +34,18 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".next-build/types/**/*.ts",
+    ".next-electron/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-build/types/**/*.ts"
+    ".next-electron-dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "data",
-    "drizzle"
+    "drizzle",
+    "video",
+    "electron/dist",
+    "release"
   ]
 }

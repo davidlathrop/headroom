@@ -109,7 +109,7 @@ Rules of the road:
 ### 3.3 Security and privacy
 
 - Local-first: binds to `localhost` by default. If exposed on a network: single-user password (argon2id), HTTP-only session cookie, behind TLS (Caddy/Tailscale).
-- Raw uploaded files are kept (hash-named, under `data/imports/`) so a batch can be re-parsed after a parser fix; a retention setting can purge them.
+- Data lives in `~/.headroom/` (`HEADROOM_DATA_DIR` to move it): the database and, hash-named under `imports/`, the raw uploaded files, so a batch can be re-parsed after a parser fix; a retention setting can purge them.
 - Backups: nightly `VACUUM INTO data/backups/headroom-YYYY-MM-DD.sqlite`, keep 30. Optional Litestream replication to a bucket you own.
 - No telemetry, no external calls at runtime. Fonts and assets bundled.
 - Secrets (if any) via environment; `.env` git-ignored; `data/` git-ignored.
@@ -343,6 +343,7 @@ Spend is broken out as **Fixed** (commitments: `spend_type = fixed`) and **Varia
 | Contributions to off-budget accounts are "Saved", shown separately from Spend | Investing $1,000 isn't spending it, but it isn't sitting in your leftover either |
 | Categories with `flow = ignore` are excluded everywhere | Balance-adjustment rows, opening balances, YNAB "Starting Balance" |
 | Partial-coverage months are labeled | You never mistake "we only have half of August" for "August was cheap" |
+| A flagged **outlier** keeps its category and counts in its month, but is left out of everything that generalizes across months — Trends (with an "include them" toggle) and the Forecast's typical-spend statistics | A one-off tax bill or bonus is real money that month, yet it must not skew "what do I usually spend on Taxes" |
 
 ### 6.3 Transfer detection
 

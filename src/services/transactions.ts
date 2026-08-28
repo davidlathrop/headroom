@@ -41,6 +41,7 @@ export interface TransactionFilters {
   categoryId?: string | null;
   uncategorized?: boolean;
   transfersOnly?: boolean;
+  outliersOnly?: boolean;
   search?: string | null;
   limit?: number;
   offset?: number;
@@ -82,6 +83,7 @@ export function queryTransactions(
     );
   if (f.uncategorized) conds.push(isNull(transactions.categoryId), isNull(transactions.transferId));
   if (f.transfersOnly) conds.push(sql`${transactions.transferId} is not null`);
+  if (f.outliersOnly) conds.push(eq(transactions.isOutlier, true));
   if (f.search && f.search.trim()) {
     const term = `%${f.search.trim()}%`;
     conds.push(
@@ -249,6 +251,17 @@ export function setPayeeDisplay(db: Db, id: string, payeeDisplay: string): void 
     { payeeDisplay: before.payeeDisplay },
     { payeeDisplay },
   );
+}
+
+/** Flag or unflag an outlier: it keeps its category and its month, but leaves the trends and forecast statistics. */
+export function setOutlier(db: Db, id: string, isOutlier: boolean): void {
+  const before = getTransaction(db, id);
+  if (before.isOutlier === isOutlier) return;
+  db.update(transactions)
+    .set({ isOutlier, isReviewed: true, updatedAt: nowIso() })
+    .where(eq(transactions.id, id))
+    .run();
+  logAudit(db, "transaction", id, "set_outlier", { isOutlier: before.isOutlier }, { isOutlier });
 }
 
 export function setNotes(db: Db, id: string, notes: string): void {

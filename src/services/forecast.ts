@@ -106,7 +106,8 @@ export function forecastView(db: Db, asOf = today(), months = 12): ForecastView 
   completeMonths.push(...partialMonthsUsed);
   completeMonths.sort((a, b) => (a < b ? 1 : -1));
   const perMonth = completeMonths.map((m) =>
-    linesForRange(db, monthStart(m), monthEnd(m)).filter(countsInReport),
+    // Flagged outliers (a one-off tax bill) are not "typical": they stay out of the medians.
+    linesForRange(db, monthStart(m), monthEnd(m)).filter((l) => countsInReport(l) && !l.isOutlier),
   );
   const cashAccountIds = new Set(
     accounts.filter((a) => a.kind === "checking" || a.kind === "savings").map((a) => a.id),

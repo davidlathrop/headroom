@@ -22,6 +22,13 @@
       "when": 1787935967406,
       "tag": "0002_payment_category",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787948461918,
+      "tag": "0003_outliers",
+      "breakpoints": true
     }
   ]
 }

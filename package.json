@@ -15,10 +15,15 @@
     "db:seed": "tsx scripts/seed.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "electron:compile": "tsc -p electron/tsconfig.json",
+    "electron:dev": "concurrently -k -n next,electron \"NEXT_DIST_DIR=.next-electron-dev next dev -p 3210\" \"wait-on http://localhost:3210 && npm run electron:compile && HEADROOM_DEV_URL=http://localhost:3210 electron .\"",
+    "electron:assemble": "ELECTRON_BUILD=1 NEXT_DIST_DIR=.next-electron next build && NEXT_DIST_DIR=.next-electron node scripts/electron-assemble.mjs",
+    "electron:smoke": "npm run electron:compile && HEADROOM_STANDALONE=1 HEADROOM_SMOKE=1 electron .",
+    "electron:build": "npm run electron:assemble && npm run electron:compile && electron-builder"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "^13.0.3",
     "csv-parse": "^5.6.0",
     "drizzle-orm": "^0.38.3",
     "next": "15.5.24",
@@ -34,13 +39,18 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^10.0.5",
     "drizzle-kit": "^0.30.1",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "15.5.24",
     "fast-check": "^3.23.1",
     "prettier": "^3.4.2",
     "tsx": "^4.19.2",
     "typescript": "^5",
-    "vitest": "^2.1.8"
-  }
+    "vitest": "^2.1.8",
+    "wait-on": "^9.1.0"
+  },
+  "main": "electron/dist/main/main.js"
 }
