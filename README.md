@@ -11,7 +11,7 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-The SQLite database is created at `data/headroom.sqlite` on first run (migrations and seed data apply automatically). Uploaded files are kept under `data/imports/`. Both are git-ignored. Override with `HEADROOM_DB` and `HEADROOM_IMPORT_DIR` (see `.env.example`).
+The SQLite database is created at `~/.headroom/headroom.sqlite` on first run (migrations and seed data apply automatically); uploaded files are kept in `~/.headroom/imports/`. Set `HEADROOM_DATA_DIR` to keep both somewhere else, or `HEADROOM_DB` / `HEADROOM_IMPORT_DIR` individually. (Earlier versions used `./data` in the project; if that exists and `~/.headroom` doesn't yet, the first start copies it across and leaves the original in place.)
 
 To see it with sample data:
 

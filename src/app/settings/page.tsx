@@ -1,3 +1,4 @@
+import { getDbPath, getImportDir } from "@/db/client";
 import { FLOWS } from "@/domain/types";
 import { listAccounts } from "@/services/accounts";
 import { categoryTree, listCategories } from "@/services/categories";
@@ -242,6 +243,26 @@ export default function SettingsPage() {
           <form action={applyRulesAction} style={{ marginTop: 10 }}>
             <button className="btn small">Apply rules to all uncategorized transactions</button>
           </form>
+        </div>
+      </div>
+
+      <div className="section">
+        <h2>Data</h2>
+        <div className="card">
+          <ul className="list small">
+            <li>
+              <span>Database</span>
+              <code>{getDbPath()}</code>
+            </li>
+            <li>
+              <span>Uploaded files</span>
+              <code>{getImportDir()}</code>
+            </li>
+          </ul>
+          <p className="muted small" style={{ marginTop: 8 }}>
+            Everything Headroom knows is in these two places; back them up together. Set
+            HEADROOM_DATA_DIR to keep them somewhere else.
+          </p>
         </div>
       </div>
 

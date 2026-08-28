@@ -109,7 +109,7 @@ Rules of the road:
 ### 3.3 Security and privacy
 
 - Local-first: binds to `localhost` by default. If exposed on a network: single-user password (argon2id), HTTP-only session cookie, behind TLS (Caddy/Tailscale).
-- Raw uploaded files are kept (hash-named, under `data/imports/`) so a batch can be re-parsed after a parser fix; a retention setting can purge them.
+- Data lives in `~/.headroom/` (`HEADROOM_DATA_DIR` to move it): the database and, hash-named under `imports/`, the raw uploaded files, so a batch can be re-parsed after a parser fix; a retention setting can purge them.
 - Backups: nightly `VACUUM INTO data/backups/headroom-YYYY-MM-DD.sqlite`, keep 30. Optional Litestream replication to a bucket you own.
 - No telemetry, no external calls at runtime. Fonts and assets bundled.
 - Secrets (if any) via environment; `.env` git-ignored; `data/` git-ignored.

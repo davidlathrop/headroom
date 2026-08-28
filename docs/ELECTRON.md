@@ -14,13 +14,14 @@ and shows it in a window**:
 ```
 Electron main (electron/main.ts)
   ├─ utilityProcess.fork(<resources>/app/server.js)   Next standalone server, 127.0.0.1:<free port>
-  │     env: HEADROOM_DB, HEADROOM_IMPORT_DIR → app.getPath("userData")
+  │     env: HEADROOM_DATA_DIR → ~/.headroom (shared with the web app)
   └─ BrowserWindow → http://127.0.0.1:<port>          sandboxed, contextIsolation, tiny preload
 ```
 
-- **Data** lives in the OS user-data folder (macOS: `~/Library/Application Support/Headroom/`):
-  `headroom.sqlite` plus `imports/` with the uploaded files. Migrations run on first open exactly
-  as in the web app (`drizzle/` ships next to the server).
+- **Data** lives in `~/.headroom/` — `headroom.sqlite` plus `imports/` with the uploaded files —
+  the same place the web app uses, so `next dev` and the desktop app share one database.
+  `HEADROOM_DATA_DIR` moves it. Migrations run on first open exactly as in the web app
+  (`drizzle/` ships next to the server).
 - **Nothing listens beyond localhost**, and the port is chosen per launch.
 - External links open in the system browser; the app stays in the window.
 
@@ -28,7 +29,7 @@ Electron main (electron/main.ts)
 
 | Command | What it does |
 |---|---|
-| `npm run electron:dev` | `next dev` under system Node + an Electron window on it. Uses the repo's `data/` like web dev. No native rebuild needed. |
+| `npm run electron:dev` | `next dev` under system Node + an Electron window on it. Same `~/.headroom` data as web dev. No native rebuild needed. |
 | `npm run electron:assemble` | `ELECTRON_BUILD=1 next build` (standalone output, into `.next-electron` so a running `next dev` is untouched), then `scripts/electron-assemble.mjs` copies server + static + public + drizzle into `electron/dist/app`. |
 | `npm run electron:smoke` | Runs the assembled app headless against a temp profile, fetches `/`, `/budgets`, `/accounts`, `/forecast`, prints `SMOKE_OK` / `SMOKE_FAIL`, exits accordingly. The pipeline's integration test. |
 | `npm run electron:build` | assemble + compile + `electron-builder` → `release/` (dmg + zip on macOS, nsis on Windows, AppImage on Linux). |

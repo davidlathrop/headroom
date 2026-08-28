@@ -5,8 +5,8 @@
  * app runs that server and shows it in a window:
  *
  *  - packaged: the Next standalone build lives in <resources>/app and is started as an Electron
- *    utility process on a free localhost port; the database and uploaded files live in the OS
- *    user-data folder (app.getPath("userData")).
+ *    utility process on a free localhost port; the database and uploaded files live in
+ *    ~/.headroom (HEADROOM_DATA_DIR to move them), shared with the web app.
  *  - development (`npm run electron:dev`): a normal `next dev` runs under system Node and the
  *    window simply opens it, so native modules need no rebuild until packaging.
  *
@@ -82,8 +82,9 @@ async function startStandalone(): Promise<string> {
     throw new Error(
       `No standalone build at ${root}. Run \`npm run electron:assemble\` (or \`electron:build\`) first.`,
     );
-  const dataDir = app.getPath("userData");
-  fs.mkdirSync(dataDir, { recursive: true });
+  // Data lives where the web app keeps it too — ~/.headroom unless HEADROOM_DATA_DIR says
+  // otherwise — so `next dev` and the desktop app see the same database.
+  const dataDir = process.env.HEADROOM_DATA_DIR ?? path.join(os.homedir(), ".headroom");
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   log(`starting server on ${url}, data in ${dataDir}`);
@@ -96,8 +97,7 @@ async function startStandalone(): Promise<string> {
       NODE_ENV: "production",
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
-      HEADROOM_DB: path.join(dataDir, "headroom.sqlite"),
-      HEADROOM_IMPORT_DIR: path.join(dataDir, "imports"),
+      HEADROOM_DATA_DIR: dataDir,
     },
   });
   server.stdout?.on("data", (d: Buffer) => process.stdout.write(`[server] ${d}`));
@@ -162,8 +162,8 @@ async function runSmoke(url: string) {
 }
 
 if (smoke) {
-  // Never touch a real profile from the smoke test.
-  app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "headroom-smoke-")));
+  // Never touch real data from the smoke test.
+  process.env.HEADROOM_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "headroom-smoke-"));
 }
 
 if (!app.requestSingleInstanceLock()) {
