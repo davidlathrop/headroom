@@ -42,21 +42,48 @@ function monthLabel(m: string, first: boolean): string {
 export default async function TrendsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ months?: string; month?: string; category?: string }>;
+  searchParams: Promise<{ months?: string; month?: string; category?: string; outliers?: string }>;
 }) {
   const sp = await searchParams;
   const n = (PERIODS as readonly number[]).includes(Number(sp.months)) ? Number(sp.months) : 12;
   const month = sp.month && isMonthKey(sp.month) ? sp.month : null;
   const categoryParam = sp.category || null;
+  const includeOutliers = sp.outliers === "1";
+  const opts = { includeOutliers };
   const db = getDb();
 
-  const url = (p: { month?: string | null; category?: string | null; months?: number }) => {
+  const url = (p: {
+    month?: string | null;
+    category?: string | null;
+    months?: number;
+    outliers?: boolean;
+  }) => {
     const q = new URLSearchParams();
     q.set("months", String(p.months ?? n));
     if (p.month) q.set("month", p.month);
     if (p.category) q.set("category", p.category);
+    if (p.outliers ?? includeOutliers) q.set("outliers", "1");
     return `/trends?${q.toString()}`;
   };
+  /** The "N outliers left out · include them" line, when anything is flagged in scope. */
+  const outlierNote = (
+    o: { count: number; spendCents: number; incomeCents: number },
+    here: { month?: string | null; category?: string | null },
+  ) =>
+    o.count === 0 ? null : (
+      <p className="muted small" style={{ margin: "0 0 12px" }}>
+        {includeOutliers ? "Including" : "Leaving out"} {o.count} flagged outlier
+        {o.count === 1 ? "" : "s"}
+        {o.spendCents ? ` (${formatCents(o.spendCents)} of spend` : ""}
+        {o.incomeCents
+          ? `${o.spendCents ? ", " : " ("}${formatCents(o.incomeCents)} of income`
+          : ""}
+        {o.spendCents || o.incomeCents ? ")" : ""} ·{" "}
+        <Link href={url({ ...here, outliers: !includeOutliers })}>
+          {includeOutliers ? "leave them out" : "include them"}
+        </Link>
+      </p>
+    );
   const catParam = (id: string | null) => id ?? UNCATEGORIZED;
 
   const crumbs: Array<{ label: string; href?: string }> = [
@@ -67,7 +94,14 @@ export default async function TrendsPage({
 
   /* ------------------------------------------------------------ category zoom */
   if (categoryParam) {
-    const z = categoryZoom(db, categoryParam === UNCATEGORIZED ? null : categoryParam, month, n);
+    const z = categoryZoom(
+      db,
+      categoryParam === UNCATEGORIZED ? null : categoryParam,
+      month,
+      n,
+      undefined,
+      opts,
+    );
     if (!z) {
       return (
         <div className="notice bad">
@@ -103,6 +137,7 @@ export default async function TrendsPage({
           </Link>
         </div>
 
+        {outlierNote(z.outliers, { month, category: categoryParam })}
         <div className={z.children.length > 0 ? "grid grid-2" : ""}>
           <div className="card">
             <Columns
@@ -202,7 +237,7 @@ export default async function TrendsPage({
 
   /* --------------------------------------------------------------- month zoom */
   if (month) {
-    const z = monthZoom(db, month);
+    const z = monthZoom(db, month, undefined, opts);
     const r = z.report;
     const cumSeries: Series[] = [
       { key: formatMonth(month), color: "var(--viz-1)" },
@@ -229,6 +264,7 @@ export default async function TrendsPage({
             Open in Transactions
           </Link>
         </div>
+        {outlierNote(z.outliers, { month })}
         <div className="grid grid-3">
           <Stat label="Income" cents={r.incomeCents} />
           <Stat
@@ -287,7 +323,7 @@ export default async function TrendsPage({
   }
 
   /* ---------------------------------------------------------------- overview */
-  const t = trends(db, n);
+  const t = trends(db, n, undefined, opts);
   const hasData = t.months.some((m) => m.incomeCents || m.spendCents);
   const label = (i: number) => monthLabel(t.months[i]!.month, i === 0);
   const note = (partial: boolean) => (partial ? "partial coverage" : undefined);
@@ -333,6 +369,8 @@ export default async function TrendsPage({
         </div>
       ) : null}
 
+      {outlierNote(t.outliers, {})}
+
       <div className="card">
         <Columns
           title="Income and spend"
@@ -373,14 +411,12 @@ export default async function TrendsPage({
             width={430}
             title="Where it went"
             subtitle={`last ${n} months · click to zoom`}
-            data={t.spendByGroup
-              .slice(0, 12)
-              .map((g) => ({
-                label: g.name,
-                value: g.amountCents,
-                detail: g.items.map((i) => ({ label: i.name, value: i.amountCents })),
-                href: url({ category: catParam(g.id) }),
-              }))}
+            data={t.spendByGroup.slice(0, 12).map((g) => ({
+              label: g.name,
+              value: g.amountCents,
+              detail: g.items.map((i) => ({ label: i.name, value: i.amountCents })),
+              href: url({ category: catParam(g.id) }),
+            }))}
           />
         </div>
         <div className="card">

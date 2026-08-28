@@ -388,7 +388,8 @@ export default function ForecastPage() {
             </form>
             <p className="muted small" style={{ marginTop: 8 }}>
               Leave the buffer blank to use one month of fixed spend. Medians, not averages, so one
-              expensive month doesn’t haunt the forecast.
+              expensive month doesn’t haunt the forecast — and transactions you flag as outliers on
+              the Transactions page are left out of them entirely.
             </p>
           </div>
         </div>

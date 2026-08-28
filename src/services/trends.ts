@@ -8,11 +8,16 @@ import {
   splitISO,
   today,
 } from "@/domain/dates";
-import { countsInReport, type MonthReport, type ReportLine } from "@/domain/reports";
+import {
+  buildMonthReport,
+  countsInReport,
+  type MonthReport,
+  type ReportLine,
+} from "@/domain/reports";
 import { listAccounts } from "./accounts";
 import { listCategories } from "./categories";
 import { accountBalance } from "./reconcile";
-import { isMonthPartial, linesForRange, monthReport } from "./reports";
+import { isMonthPartial, linesForRange } from "./reports";
 import { queryTransactions, type TransactionRow } from "./transactions";
 
 export interface MonthPoint {
@@ -43,12 +48,54 @@ export interface StackedMonth {
   ids: Record<string, string | null>;
 }
 
+export interface OutlierTotals {
+  count: number;
+  spendCents: number;
+  incomeCents: number;
+}
+
+export interface TrendsOptions {
+  /** Flagged outliers are left out of every trend by default; true puts them back. */
+  includeOutliers?: boolean;
+}
+
 export interface Trends {
   months: MonthPoint[];
   spendByGroup: GroupTotal[];
   /** Top spend groups over the period (max 5) — the rest fold into "Other". */
   stackGroups: string[];
   stack: StackedMonth[];
+  /** What was flagged in the period, whether or not it is included. */
+  outliers: OutlierTotals;
+  includeOutliers: boolean;
+}
+
+/** One month's report for the trends views, plus what its flagged outliers amount to. */
+function reportFor(
+  db: Db,
+  month: string,
+  includeOutliers: boolean,
+): {
+  report: MonthReport & { gaps: Array<{ accountId: string; accountName: string }> };
+  lines: ReportLine[];
+} {
+  const all = linesForRange(db, monthStart(month), monthEnd(month));
+  const lines = includeOutliers ? all : all.filter((l) => !l.isOutlier);
+  const { partial, gaps } = isMonthPartial(db, month);
+  const report = { ...buildMonthReport(month, lines, partial), gaps };
+  // Outlier totals always describe everything flagged, so the toggle can say what it hides.
+  report.outliers = buildMonthReport(month, all, partial).outliers;
+  return { report, lines };
+}
+
+function sumOutliers(reports: Iterable<MonthReport>): OutlierTotals {
+  const t = { count: 0, spendCents: 0, incomeCents: 0 };
+  for (const r of reports) {
+    t.count += r.outliers.count;
+    t.spendCents += r.outliers.spendCents;
+    t.incomeCents += r.outliers.incomeCents;
+  }
+  return t;
 }
 
 const MAX_STACK_GROUPS = 5;
@@ -98,7 +145,8 @@ function groupTotals(
 }
 
 /** Everything the Trends overview draws, for the last `n` months ending with the current one. */
-export function trends(db: Db, n: number, asOf = today()): Trends {
+export function trends(db: Db, n: number, asOf = today(), opts: TrendsOptions = {}): Trends {
+  const includeOutliers = opts.includeOutliers === true;
   const last = monthKey(asOf);
   const keys: string[] = [];
   for (let i = n - 1; i >= 0; i--) keys.push(addMonths(last, -i));
@@ -106,7 +154,7 @@ export function trends(db: Db, n: number, asOf = today()): Trends {
   const idx = groupIndex(db);
   const reports = new Map<string, MonthReport>();
   const months: MonthPoint[] = keys.map((m) => {
-    const r = monthReport(db, m);
+    const r = reportFor(db, m, includeOutliers).report;
     reports.set(m, r);
     const end = monthEnd(m) < asOf ? monthEnd(m) : asOf;
     const netCash = accounts.reduce((s, a) => s + accountBalance(db, a.id, end).balanceCents, 0);
@@ -165,6 +213,8 @@ export function trends(db: Db, n: number, asOf = today()): Trends {
     spendByGroup,
     stackGroups: hasOther ? [...top.map((g) => g.name), "Other"] : top.map((g) => g.name),
     stack,
+    outliers: sumOutliers(reports.values()),
+    includeOutliers,
   };
 }
 
@@ -177,14 +227,20 @@ export interface MonthZoom {
   groups: GroupTotal[];
   /** Cumulative spend by day of month; null once past today (current month) or beyond the month's length. */
   cumulative: Array<{ day: number; thisMonth: number | null; prevMonth: number | null }>;
+  outliers: OutlierTotals;
+  includeOutliers: boolean;
 }
 
-function cumulativeSpend(db: Db, month: string, asOf: string): Array<number | null> {
-  const start = monthStart(month);
+function cumulativeSpend(
+  db: Db,
+  month: string,
+  asOf: string,
+  includeOutliers: boolean,
+): Array<number | null> {
   const end = monthEnd(month);
   const days = daysInMonth(Number(month.slice(0, 4)), Number(month.slice(5, 7)));
   const perDay = new Array<number>(days + 1).fill(0);
-  for (const l of linesForRange(db, start, end)) {
+  for (const l of reportFor(db, month, includeOutliers).lines) {
     if (!isSpendLine(l)) continue;
     const d = splitISO(l.postedDate).d;
     perDay[d] = (perDay[d] ?? 0) - l.amountCents;
@@ -199,23 +255,37 @@ function cumulativeSpend(db: Db, month: string, asOf: string): Array<number | nu
   return out;
 }
 
-export function monthZoom(db: Db, month: string, asOf = today()): MonthZoom {
-  const report = monthReport(db, month);
+export function monthZoom(
+  db: Db,
+  month: string,
+  asOf = today(),
+  opts: TrendsOptions = {},
+): MonthZoom {
+  const includeOutliers = opts.includeOutliers === true;
+  const report = reportFor(db, month, includeOutliers).report;
   const idx = groupIndex(db);
   const groups = [...groupTotals(report, idx).values()]
     .map((g) => ({ ...g, items: g.items.sort((a, b) => b.amountCents - a.amountCents) }))
     .filter((g) => g.amountCents > 0)
     .sort((a, b) => b.amountCents - a.amountCents);
   const prevMonth = addMonths(month, -1);
-  const cur = cumulativeSpend(db, month, asOf);
-  const prev = cumulativeSpend(db, prevMonth, asOf);
+  const cur = cumulativeSpend(db, month, asOf, includeOutliers);
+  const prev = cumulativeSpend(db, prevMonth, asOf, includeOutliers);
   const days = Math.max(cur.length, prev.length);
   const cumulative = Array.from({ length: days }, (_, i) => ({
     day: i + 1,
     thisMonth: cur[i] ?? null,
     prevMonth: prev[i] ?? null,
   }));
-  return { month, prevMonth, report, groups, cumulative };
+  return {
+    month,
+    prevMonth,
+    report,
+    groups,
+    cumulative,
+    outliers: sumOutliers([report]),
+    includeOutliers,
+  };
 }
 
 /* --------------------------------------------------------- category zoom */
@@ -232,6 +302,9 @@ export interface CategoryZoom {
   history: Array<{ month: string; amountCents: number; partial: boolean }>;
   transactions: TransactionRow[];
   transactionCount: number;
+  /** Flagged outliers belonging to this category over the scope. */
+  outliers: OutlierTotals;
+  includeOutliers: boolean;
 }
 
 /** `categoryId` may be a group, a leaf, or null for Uncategorized. `month` null = the whole `n`-month period. */
@@ -241,7 +314,9 @@ export function categoryZoom(
   month: string | null,
   n: number,
   asOf = today(),
+  opts: TrendsOptions = {},
 ): CategoryZoom | null {
+  const includeOutliers = opts.includeOutliers === true;
   const cats = listCategories(db, { includeArchived: true });
   const cat = categoryId ? cats.find((c) => c.id === categoryId) : null;
   if (categoryId && !cat) return null;
@@ -267,10 +342,16 @@ export function categoryZoom(
     { id: string | null; name: string; amountCents: number }
   >();
   let total = 0;
+  const outliers = { count: 0, spendCents: 0, incomeCents: 0 };
   const history = historyMonths.map((m) => {
     let sum = 0;
     for (const l of linesForRange(db, monthStart(m), monthEnd(m))) {
       if (!belongs(l)) continue;
+      if (l.isOutlier && scopeMonths.includes(m)) {
+        outliers.count++;
+        outliers.spendCents += -l.amountCents;
+      }
+      if (l.isOutlier && !includeOutliers) continue;
       const v = -l.amountCents;
       sum += v;
       if (scopeMonths.includes(m)) {
@@ -309,5 +390,7 @@ export function categoryZoom(
     history,
     transactions: rows.filter((t) => t.amountCents !== 0),
     transactionCount: month ? q.total : rows.length,
+    outliers,
+    includeOutliers,
   };
 }

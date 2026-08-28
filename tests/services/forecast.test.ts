@@ -9,6 +9,7 @@ import { forecastView } from "@/services/forecast";
 import { commitBatch, stageImport } from "@/services/imports";
 import { addPlanned } from "@/services/planned";
 import { listSeries, setSeriesStatus } from "@/services/recurring";
+import { queryTransactions, setOutlier } from "@/services/transactions";
 import { ensureSeeded } from "@/services/seed";
 
 let db: Db;
@@ -17,7 +18,10 @@ let checking: string;
 /** Six months of synthetic checking history: biweekly pay, monthly rent + Netflix, weekly-ish groceries. */
 function history(): Buffer {
   const lines = ["Details,Posting Date,Description,Amount,Type,Balance,Check or Slip #"];
-  const row = (d: string, desc: string, amt: string) => lines.push(`DEBIT,${d.slice(5, 7)}/${d.slice(8, 10)}/${d.slice(0, 4)},${desc},${amt},DEBIT_CARD,0,`);
+  const row = (d: string, desc: string, amt: string) =>
+    lines.push(
+      `DEBIT,${d.slice(5, 7)}/${d.slice(8, 10)}/${d.slice(0, 4)},${desc},${amt},DEBIT_CARD,0,`,
+    );
   let pay = "2026-03-06";
   for (let i = 0; i < 13; i++) {
     row(pay, "ACME CORP PAYROLL PPD ID: 9876543210", "3250.00");
@@ -27,7 +31,8 @@ function history(): Buffer {
     row(`2026-${m}-01`, "OAKWOOD APARTMENTS RENT", "-2000.00");
     row(`2026-${m}-06`, "NETFLIX.COM", "-15.49");
     row(`2026-${m}-10`, "PG&E WEB ONLINE", `-${(120 + Number(m) * 7).toFixed(2)}`);
-    for (const d of ["03", "11", "19", "26"]) row(`2026-${m}-${d}`, "SAFEWAY #1234 OAKLAND CA", `-${(60 + Number(d)).toFixed(2)}`);
+    for (const d of ["03", "11", "19", "26"])
+      row(`2026-${m}-${d}`, "SAFEWAY #1234 OAKLAND CA", `-${(60 + Number(d)).toFixed(2)}`);
     row(`2026-${m}-15`, "TST* THE MILL SAN FRANCISCO CA", "-42.00");
   }
   return Buffer.from(lines.join("\n") + "\n");
@@ -37,7 +42,14 @@ beforeEach(() => {
   process.env.HEADROOM_IMPORT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "headroom-forecast-"));
   db = openTestDb();
   ensureSeeded(db);
-  checking = createAccount(db, { name: "Checking", kind: "checking", onBudget: true, currency: "USD", openingBalanceCents: 500000, openingBalanceDate: "2026-02-28" }).id;
+  checking = createAccount(db, {
+    name: "Checking",
+    kind: "checking",
+    onBudget: true,
+    currency: "USD",
+    openingBalanceCents: 500000,
+    openingBalanceDate: "2026-02-28",
+  }).id;
   const b = stageImport(db, { fileName: "history.csv", bytes: history(), accountId: checking });
   commitBatch(db, b.id);
 });
@@ -56,7 +68,9 @@ describe("forecastView", () => {
     // Groceries every 7–8 days is a weekly series — but a variable-amount one, so the forecast
     // uses the category median for it rather than treating it as a fixed bill.
     expect(byPayee("SAFEWAY")?.cadence).toBe("weekly");
-    expect(byPayee("SAFEWAY")!.amountMadCents / Math.abs(byPayee("SAFEWAY")!.typicalAmountCents)).toBeGreaterThan(0.05);
+    expect(
+      byPayee("SAFEWAY")!.amountMadCents / Math.abs(byPayee("SAFEWAY")!.typicalAmountCents),
+    ).toBeGreaterThan(0.05);
   });
 
   it("projects twelve months, a 61-point cash curve, and safe-to-spend", () => {
@@ -90,5 +104,21 @@ describe("forecastView", () => {
     expect(listSeries(db).find((s) => s.id === rent.id)?.status).toBe("confirmed");
     expect(f.series.some((s) => s.id === netflix.id)).toBe(false);
     expect(f.series.find((s) => s.id === rent.id)?.confirmed).toBe(true);
+  });
+
+  it("leaves flagged outliers out of the typical-spend medians", () => {
+    const before = forecastView(db, "2026-08-26").variableMedians.find(
+      (v) => v.name === "Groceries",
+    )!;
+    expect(before.medianCents).toBe(29900); // 63 + 71 + 79 + 86 every month
+    // Flag the $86 grocery run in two of the three complete months.
+    for (const d of ["2026-07-26", "2026-06-26"]) {
+      const t = queryTransactions(db, { search: "SAFEWAY" }).rows.find((x) => x.postedDate === d)!;
+      setOutlier(db, t.id, true);
+    }
+    const after = forecastView(db, "2026-08-26").variableMedians.find(
+      (v) => v.name === "Groceries",
+    )!;
+    expect(after.medianCents).toBe(29900 - 8600); // median of 213, 213, 299
   });
 });

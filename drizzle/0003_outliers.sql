@@ -1,0 +1,1 @@
+ALTER TABLE `transactions` ADD `is_outlier` integer DEFAULT false NOT NULL;

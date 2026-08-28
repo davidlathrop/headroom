@@ -67,6 +67,7 @@ export function linesForRange(db: Db, start: string, end: string): ReportLine[] 
       accountOnBudget: r.onBudget,
       postedDate: t.postedDate,
       isTransfer: t.transferId != null,
+      isOutlier: t.isOutlier,
     };
     const ss = splitsByTxn.get(t.id);
     if (ss && ss.length) {
@@ -133,8 +134,10 @@ export function isMonthPartial(
 export function monthReport(
   db: Db,
   month: MonthKey,
+  opts: { excludeOutliers?: boolean } = {},
 ): MonthReport & { gaps: Array<{ accountId: string; accountName: string }> } {
-  const lines = linesForRange(db, monthStart(month), monthEnd(month));
+  let lines = linesForRange(db, monthStart(month), monthEnd(month));
+  if (opts.excludeOutliers) lines = lines.filter((l) => !l.isOutlier);
   const { partial, gaps } = isMonthPartial(db, month);
   return { ...buildMonthReport(month, lines, partial), gaps };
 }

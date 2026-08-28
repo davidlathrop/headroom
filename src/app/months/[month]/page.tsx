@@ -39,7 +39,7 @@ export default async function MonthPage({ params }: { params: Promise<{ month: s
         <Stat
           label="Spent"
           cents={report.spendCents}
-          hint={`${formatCents(report.spendFixedCents)} fixed · ${formatCents(report.spendVariableCents)} variable`}
+          hint={`${formatCents(report.spendFixedCents)} fixed · ${formatCents(report.spendVariableCents)} variable${report.outliers.spendCents ? ` · incl. ${formatCents(report.outliers.spendCents)} flagged outlier${report.outliers.count === 1 ? "" : "s"}` : ""}`}
         />
         <Stat
           label="Headroom"

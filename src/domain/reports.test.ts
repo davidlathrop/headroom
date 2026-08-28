@@ -18,6 +18,7 @@ function line(p: Partial<ReportLine> & { transactionId: string; amountCents: num
     flow: "expense",
     spendType: "variable",
     isTransfer: false,
+    isOutlier: false,
     ...p,
   };
 }
@@ -211,5 +212,48 @@ describe("foldSlices", () => {
     ]);
     expect(foldSlices(items.slice(0, 6), 6)).toHaveLength(5); // the refund-only item is dropped
     expect(foldSlices([{ name: "x", amountCents: 0 }])).toEqual([]);
+  });
+});
+
+describe("buildMonthReport — outliers", () => {
+  it("counts flagged outliers in the headline but reports them separately", () => {
+    const r = buildMonthReport(
+      "2026-04",
+      [
+        line({ transactionId: "g", amountCents: -8000 }),
+        line({
+          transactionId: "tax",
+          amountCents: -900000,
+          isOutlier: true,
+          categoryId: "tax",
+          categoryName: "Taxes",
+        }),
+        line({
+          transactionId: "bonus",
+          amountCents: 500000,
+          isOutlier: true,
+          categoryId: "inc",
+          categoryName: "Bonus",
+          flow: "income",
+        }),
+        line({
+          transactionId: "u",
+          amountCents: -100,
+          isOutlier: true,
+          categoryId: null,
+          categoryName: null,
+          flow: null,
+        }),
+      ],
+      false,
+    );
+    expect(r.spendCents).toBe(8000 + 900000 + 100);
+    expect(r.incomeCents).toBe(500000);
+    expect(r.outliers).toEqual({
+      count: 3,
+      incomeCents: 500000,
+      spendCents: 900100,
+      savedCents: 0,
+    });
   });
 });

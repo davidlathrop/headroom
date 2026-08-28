@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Money } from "@/components/Money";
 import { formatMonth } from "@/domain/dates";
+import { formatCents } from "@/domain/money";
 import { getDb } from "@/services/context";
 import { listMonthReports } from "@/services/reports";
 
@@ -66,6 +67,15 @@ export default function MonthsPage() {
                   {r.partial ? <span className="chip warn">partial</span> : null}{" "}
                   {r.uncategorizedCount > 0 ? (
                     <span className="chip">{r.uncategorizedCount} uncategorized</span>
+                  ) : null}{" "}
+                  {r.outliers.count > 0 ? (
+                    <span
+                      className="chip warn"
+                      title="Counted here; left out of trends and forecast"
+                    >
+                      incl. {formatCents(r.outliers.spendCents + r.outliers.incomeCents)} outlier
+                      {r.outliers.count === 1 ? "" : "s"}
+                    </span>
                   ) : null}
                 </td>
               </tr>
