@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { openTestDb, type Db } from "@/db/client";
 import { createAccount } from "@/services/accounts";
 import { commitBatch, stageImport } from "@/services/imports";
-import { monthReport } from "@/services/reports";
+import { categoryBreakdown, listMonthReports, monthReport } from "@/services/reports";
 import { ensureSeeded } from "@/services/seed";
 import { queryTransactions, setOutlier } from "@/services/transactions";
 import { categoryZoom, monthZoom, trends } from "@/services/trends";
@@ -76,5 +76,22 @@ describe("outliers", () => {
     setOutlier(db, whole, false);
     expect(trends(db, 1, "2026-03-31").months[0]!.spendCents).toBe(plain.spendCents);
     expect(monthReport(db, "2026-03").outliers.count).toBe(0);
+  });
+
+  it("the Months list and a month's breakdown can leave them out", () => {
+    const plain = monthReport(db, "2026-03");
+    setOutlier(db, whole, true);
+    const withRow = listMonthReports(db, 36).find((r) => r.month === "2026-03")!;
+    const withoutRow = listMonthReports(db, 36, { excludeOutliers: true }).find(
+      (r) => r.month === "2026-03",
+    )!;
+    expect(withRow.spendCents).toBe(plain.spendCents);
+    expect(withoutRow.spendCents).toBe(plain.spendCents - 8642);
+    expect(withRow.outliers.count).toBe(1);
+    const groceries = (r: ReturnType<typeof categoryBreakdown>) =>
+      r.groups.find((g) => g.name === "Food")?.items.find((c) => c.name === "Groceries")
+        ?.amountCents ?? 0;
+    expect(groceries(categoryBreakdown(db, "2026-03"))).toBe(8642);
+    expect(groceries(categoryBreakdown(db, "2026-03", { excludeOutliers: true }))).toBe(0);
   });
 });

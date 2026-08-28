@@ -7,15 +7,38 @@ import { listMonthReports } from "@/services/reports";
 
 export const dynamic = "force-dynamic";
 
-export default function MonthsPage() {
-  const reports = listMonthReports(getDb(), 36);
+export default async function MonthsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ outliers?: string }>;
+}) {
+  const sp = await searchParams;
+  const excludeOutliers = sp.outliers === "0";
+  const reports = listMonthReports(getDb(), 36, { excludeOutliers });
+  const flagged = reports.reduce((n, r) => n + r.outliers.count, 0);
+  const monthHref = (m: string) => `/months/${m}${excludeOutliers ? "?outliers=0" : ""}`;
   return (
     <>
       <div className="pagehead">
         <div>
           <div className="eyebrow">History</div>
           <h1>Months</h1>
-          <p className="sub">Income, spend and headroom by calendar month, on posted date.</p>
+          <p className="sub">
+            Income, spend and headroom by calendar month, on posted date.
+            {excludeOutliers
+              ? " Flagged outliers are left out of every row."
+              : flagged > 0
+                ? ` Includes ${flagged} flagged outlier${flagged === 1 ? "" : "s"}.`
+                : ""}
+          </p>
+        </div>
+        <div className="tabs" style={{ marginBottom: 0 }} role="group" aria-label="Outliers">
+          <Link href="/months" aria-current={!excludeOutliers ? "page" : undefined}>
+            With outliers
+          </Link>
+          <Link href="/months?outliers=0" aria-current={excludeOutliers ? "page" : undefined}>
+            Without outliers
+          </Link>
         </div>
       </div>
       <div className="tablewrap">
@@ -43,7 +66,7 @@ export default function MonthsPage() {
             {reports.map((r) => (
               <tr key={r.month}>
                 <td>
-                  <Link href={`/months/${r.month}`}>{formatMonth(r.month)}</Link>
+                  <Link href={monthHref(r.month)}>{formatMonth(r.month)}</Link>
                 </td>
                 <td className="num">
                   <Money cents={r.incomeCents} />
@@ -71,7 +94,7 @@ export default function MonthsPage() {
                   {r.outliers.count > 0 ? (
                     <span
                       className="chip warn"
-                      title="Counted here; left out of trends and forecast"
+                      title="Counted in this row; left out of trends and forecast"
                     >
                       incl. {formatCents(r.outliers.spendCents + r.outliers.incomeCents)} outlier
                       {r.outliers.count === 1 ? "" : "s"}

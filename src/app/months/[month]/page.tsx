@@ -9,18 +9,27 @@ import { categoryBreakdown } from "@/services/reports";
 
 export const dynamic = "force-dynamic";
 
-export default async function MonthPage({ params }: { params: Promise<{ month: string }> }) {
+export default async function MonthPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ month: string }>;
+  searchParams: Promise<{ outliers?: string }>;
+}) {
   const { month } = await params;
+  const sp = await searchParams;
   if (!isMonthKey(month)) notFound();
-  const { report, groups } = categoryBreakdown(getDb(), month);
+  const excludeOutliers = sp.outliers === "0";
+  const qs = excludeOutliers ? "?outliers=0" : "";
+  const { report, groups } = categoryBreakdown(getDb(), month, { excludeOutliers });
   return (
     <>
       <div className="pagehead">
         <div>
           <div className="eyebrow">
-            <Link href="/months">Months</Link> ·{" "}
-            <Link href={`/months/${addMonths(month, -1)}`}>← prev</Link> ·{" "}
-            <Link href={`/months/${addMonths(month, 1)}`}>next →</Link>
+            <Link href={`/months${qs}`}>Months</Link> ·{" "}
+            <Link href={`/months/${addMonths(month, -1)}${qs}`}>← prev</Link> ·{" "}
+            <Link href={`/months/${addMonths(month, 1)}${qs}`}>next →</Link>
           </div>
           <h1>{formatMonth(month)}</h1>
           <p className="sub">
@@ -28,6 +37,19 @@ export default async function MonthPage({ params }: { params: Promise<{ month: s
             {report.partial
               ? ` · coverage incomplete (${report.gaps.map((g) => g.accountName).join(", ")})`
               : ""}
+            {excludeOutliers ? (
+              <>
+                {" · "}flagged outliers left out ·{" "}
+                <Link href={`/months/${month}`}>include them</Link>
+              </>
+            ) : report.outliers.count > 0 ? (
+              <>
+                {" · "}including {report.outliers.count} flagged outlier
+                {report.outliers.count === 1 ? "" : "s"} (
+                {formatCents(report.outliers.spendCents + report.outliers.incomeCents)}) ·{" "}
+                <Link href={`/months/${month}?outliers=0`}>leave them out</Link>
+              </>
+            ) : null}
           </p>
         </div>
         <Link className="btn" href={`/transactions?month=${month}`}>

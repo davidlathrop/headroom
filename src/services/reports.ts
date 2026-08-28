@@ -154,15 +154,23 @@ export function listMonthKeys(db: Db): MonthKey[] {
   return rows.map((r) => r.m);
 }
 
-export function listMonthReports(db: Db, limit = 24): MonthReport[] {
+export function listMonthReports(
+  db: Db,
+  limit = 24,
+  opts: { excludeOutliers?: boolean } = {},
+): MonthReport[] {
   return listMonthKeys(db)
     .slice(0, limit)
-    .map((m) => monthReport(db, m));
+    .map((m) => monthReport(db, m, opts));
 }
 
 /** Spend by category for one month, grouped by parent for display. */
-export function categoryBreakdown(db: Db, month: MonthKey) {
-  const r = monthReport(db, month);
+export function categoryBreakdown(
+  db: Db,
+  month: MonthKey,
+  opts: { excludeOutliers?: boolean } = {},
+) {
+  const r = monthReport(db, month, opts);
   const groups = new Map<
     string,
     { name: string; amountCents: number; flow: string | null; items: typeof r.byCategory }
