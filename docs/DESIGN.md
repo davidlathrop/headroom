@@ -434,7 +434,7 @@ Ranges (v3): show p25–p75 of the trailing distribution per variable category a
 
 ## 9. Screens
 
-1. **This month** — Income · Spent · Left over as three large figures; a thin bar showing day-of-month progress; Fixed vs Variable split; *safe to spend until <date>*; upcoming bills (7 days); counts needing attention (uncategorized, probable transfers, reconciliation alerts, partial coverage).
+1. **This month** — Income · Spent · Left over as three large figures; a thin bar showing day-of-month progress; a spending donut by category group (≤ 6 slices + Other, legend with amounts and shares, slices zoom into Trends) and an Income vs Spent (fixed + variable) vs Saved bar; counts needing attention (uncategorized, payments to a loan with no category, reconciliation alerts, partial coverage); budget summaries; recent imports.
 2. **Import** — drop zone; format/profile detection; preview table with `new / duplicate / probable duplicate / pending` tabs, side-by-side comparisons, coverage bar showing what this file adds; **Commit**. Import history with counts and **Roll back**.
 3. **Transactions** — ledger with filters (account, month, category, uncategorized, transfers); inline category edit; split; link/unlink transfer; "always categorize as…".
 4. **Months** — one row per month: Income, Fixed, Variable, Saved, Left over, Savings rate; partial-month badge; drill into category breakdown; 12-month trend.

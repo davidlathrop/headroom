@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildMonthReport, countsInReport, isRangeCovered, type ReportLine } from "./reports";
+import {
+  buildMonthReport,
+  countsInReport,
+  foldSlices,
+  isRangeCovered,
+  type ReportLine,
+} from "./reports";
 
 function line(p: Partial<ReportLine> & { transactionId: string; amountCents: number }): ReportLine {
   return {
@@ -176,5 +182,34 @@ describe("countsInReport — categorized transfers", () => {
     expect(r.incomeCents).toBe(0);
     expect(r.transactionCount).toBe(1);
     expect(r.byCategory.map((c) => c.name)).toEqual(["Rent / Mortgage"]);
+  });
+});
+
+describe("foldSlices", () => {
+  const items = [
+    { name: "Food", amountCents: 500 },
+    { name: "Housing", amountCents: 2000 },
+    { name: "Fuel", amountCents: 100 },
+    { name: "Refund-only", amountCents: -50 },
+    { name: "Health", amountCents: 200 },
+    { name: "Fun", amountCents: 150 },
+    { name: "Gifts", amountCents: 40 },
+    { name: "Pets", amountCents: 10 },
+  ];
+  it("sorts largest first, drops non-positive, folds the tail into Other so at most max slices remain", () => {
+    const s = foldSlices(items, 6);
+    expect(s.map((x) => x.name)).toEqual(["Housing", "Food", "Health", "Fun", "Fuel", "Other"]);
+    expect(s[5]).toMatchObject({ amountCents: 50, members: [items[6], items[7]] });
+    expect(s.reduce((t, x) => t + x.share, 0)).toBeCloseTo(1, 9);
+    expect(s[0]!.share).toBeCloseTo(2000 / 3000, 9);
+  });
+  it("keeps every slice when they fit, and returns nothing for no spend", () => {
+    expect(foldSlices(items.slice(0, 3), 6).map((x) => x.name)).toEqual([
+      "Housing",
+      "Food",
+      "Fuel",
+    ]);
+    expect(foldSlices(items.slice(0, 6), 6)).toHaveLength(5); // the refund-only item is dropped
+    expect(foldSlices([{ name: "x", amountCents: 0 }])).toEqual([]);
   });
 });

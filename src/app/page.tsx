@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { Donut, StackedHBars, type StackedRow } from "@/components/charts";
 import { Money } from "@/components/Money";
 import { Stat } from "@/components/Stat";
 import { daysInMonth, formatISO, formatMonth, monthKey, splitISO, today } from "@/domain/dates";
 import { formatCents } from "@/domain/money";
+import { foldSlices } from "@/domain/reports";
 import { listAccounts } from "@/services/accounts";
 import { budgetSummaries } from "@/services/budgets";
+import { listCategories } from "@/services/categories";
 import { getDb } from "@/services/context";
 import { listBatches } from "@/services/imports";
 import { reconcileAccount } from "@/services/reconcile";
@@ -29,6 +32,47 @@ export default function HomePage() {
   const batches = listBatches(db, 3);
   const budgetRows = budgetSummaries(db, month);
   const paymentNudges = accountsNeedingPaymentCategory(db);
+
+  // Spending pie: expense groups (and uncategorized outflows), largest first, tail folded into Other.
+  const groupId = new Map(
+    listCategories(db)
+      .filter((c) => !c.parentId)
+      .map((c) => [c.name, c.id]),
+  );
+  const slices = foldSlices(
+    groups.filter((g) => g.flow === "expense" || g.flow === null),
+    6,
+  ).map((sl) => {
+    const one = sl.members.length === 1 ? sl.members[0]! : null;
+    const gid = one ? (groupId.get(one.name) ?? null) : null;
+    return {
+      label: sl.name,
+      value: sl.amountCents,
+      detail: one
+        ? one.items.length > 1
+          ? one.items.map((i) => ({ label: i.name, value: i.amountCents }))
+          : undefined
+        : sl.members.map((m) => ({ label: m.name, value: m.amountCents })),
+      href: one
+        ? one.flow === null
+          ? `/transactions?month=${month}&uncategorized=1`
+          : gid
+            ? `/trends?month=${month}&category=${gid}`
+            : undefined
+        : undefined,
+    };
+  });
+  const incomeVsSpend: StackedRow[] = [
+    { label: "Income", values: { Income: report.incomeCents } },
+    {
+      label: "Spent",
+      values: { Fixed: report.spendFixedCents, Variable: report.spendVariableCents },
+      note: report.uncategorizedCount
+        ? `${report.uncategorizedCount} uncategorized in Variable`
+        : undefined,
+    },
+    ...(report.savedCents > 0 ? [{ label: "Saved", values: { Saved: report.savedCents } }] : []),
+  ];
   const hasData = report.transactionCount > 0;
   const latestMonth = listMonthKeys(db).find((m) => m < month) ?? null;
 
@@ -90,6 +134,40 @@ export default function HomePage() {
                 : "income − spend − saved"
           }
         />
+      </div>
+
+      <div className="section grid grid-2">
+        <div className="card">
+          <Donut
+            title="Where it went"
+            subtitle={
+              hasData ? `${formatMonth(month)} · click a slice to zoom` : formatMonth(month)
+            }
+            data={slices}
+            centerLabel="spent"
+          />
+        </div>
+        <div className="card">
+          <StackedHBars
+            title="Income vs spend"
+            subtitle={
+              hasData
+                ? `headroom ${formatCents(report.leftOverCents)}${report.partial ? " · coverage incomplete" : ""}`
+                : "nothing yet this month"
+            }
+            rows={incomeVsSpend}
+            series={[
+              { key: "Income", color: "var(--viz-1)" },
+              { key: "Fixed", color: "var(--viz-2)" },
+              { key: "Variable", color: "var(--viz-2)", opacity: 0.55 },
+              { key: "Saved", color: "var(--viz-3)" },
+            ]}
+          />
+          <p className="muted small" style={{ margin: "8px 0 0" }}>
+            Spent is fixed commitments plus variable spending; what’s left after Saved is your
+            headroom.
+          </p>
+        </div>
       </div>
 
       {(uncategorized > 0 || report.partial || recon.length > 0 || paymentNudges.length > 0) && (
@@ -185,35 +263,7 @@ export default function HomePage() {
         </div>
       )}
 
-      <div className="section grid grid-2">
-        <div>
-          <h2>Where it went</h2>
-          <div className="card">
-            {!hasData ? (
-              <div className="empty">No transactions this month yet.</div>
-            ) : (
-              <ul className="list">
-                {groups
-                  .filter((g) => g.flow !== "income")
-                  .slice(0, 10)
-                  .map((g) => (
-                    <li key={g.name}>
-                      <span>
-                        {g.name}
-                        <span className="cell-sub">
-                          {g.items
-                            .map((i) => i.name)
-                            .slice(0, 4)
-                            .join(" · ")}
-                        </span>
-                      </span>
-                      <Money cents={-g.amountCents} />
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </div>
-        </div>
+      <div className="section">
         <div>
           <h2>Recent imports</h2>
           <div className="card">

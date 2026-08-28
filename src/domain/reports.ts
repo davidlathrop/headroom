@@ -209,3 +209,40 @@ function nextDay(iso: ISODate): ISODate {
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
 }
+
+export interface Slice<T> {
+  name: string;
+  amountCents: Cents;
+  /** 0–1 of the positive total. */
+  share: number;
+  /** The items folded into this slice (one, or several for "Other"). */
+  members: T[];
+}
+
+/**
+ * Part-to-whole slices for a donut: largest first, at most `max` slices, the tail folded into
+ * "Other" so a fixed categorical palette never runs out. Non-positive amounts are dropped.
+ */
+export function foldSlices<T extends { name: string; amountCents: Cents }>(
+  items: T[],
+  max = 6,
+): Array<Slice<T>> {
+  const sorted = items
+    .filter((i) => i.amountCents > 0)
+    .sort((a, b) => b.amountCents - a.amountCents);
+  const total = sorted.reduce((s, i) => s + i.amountCents, 0);
+  if (total === 0) return [];
+  const head = sorted.length > max ? sorted.slice(0, max - 1) : sorted;
+  const tail = sorted.slice(head.length);
+  const out: Array<Slice<T>> = head.map((i) => ({
+    name: i.name,
+    amountCents: i.amountCents,
+    share: i.amountCents / total,
+    members: [i],
+  }));
+  if (tail.length) {
+    const amount = tail.reduce((s, i) => s + i.amountCents, 0);
+    out.push({ name: "Other", amountCents: amount, share: amount / total, members: tail });
+  }
+  return out;
+}

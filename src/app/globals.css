@@ -226,3 +226,12 @@ details > summary { cursor: pointer; color: var(--accent); }
 .delta-down { color: var(--pos); }
 .tabs a .num { color: var(--muted); margin-left: 4px; }
 .tabs a[aria-current="page"] .num { color: inherit; }
+
+/* ---- donut ---- */
+.donut { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.donut-legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 200px; font-size: 13px; }
+.donut-legend li { display: grid; grid-template-columns: 12px 1fr auto auto; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--rule); }
+.donut-legend li:last-child { border-bottom: 0; }
+.donut-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; }
+.donut-legend .name { min-width: 0; overflow-wrap: break-word; hyphens: auto; line-height: 1.25; }
+.donut-legend .num.muted { min-width: 34px; text-align: right; }

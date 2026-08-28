@@ -859,3 +859,270 @@ export function Lines({
     </figure>
   );
 }
+
+/* -------------------------------------------------------------------- donut */
+
+export interface DonutSlice {
+  label: string;
+  value: number;
+  /** Rows shown in the tooltip and the table (the members of an "Other" slice). */
+  detail?: Array<{ label: string; value: number }>;
+  href?: string;
+}
+
+function arcPath(cx: number, cy: number, R: number, r: number, a0: number, a1: number): string {
+  const sweep = Math.min(a1 - a0, Math.PI * 2 - 0.0001); // a lone slice still needs a closed ring
+  const end = a0 + sweep;
+  const large = sweep > Math.PI ? 1 : 0;
+  const pt = (rad: number, a: number) =>
+    `${(cx + rad * Math.cos(a)).toFixed(2)},${(cy + rad * Math.sin(a)).toFixed(2)}`;
+  return `M${pt(R, a0)} A${R},${R} 0 ${large} 1 ${pt(R, end)} L${pt(r, end)} A${r},${r} 0 ${large} 0 ${pt(r, a0)} Z`;
+}
+
+/**
+ * Part-to-whole at a glance: at most six slices plus Other (fold with foldSlices), a 2px surface
+ * gap between slices, the total as the hero number in the middle, identity carried by the legend
+ * (swatch + name + value + share — never text in the series color), hover tooltip, table view.
+ */
+export function Donut({
+  title,
+  subtitle,
+  data,
+  centerLabel,
+  colors = [
+    "var(--viz-1)",
+    "var(--viz-2)",
+    "var(--viz-3)",
+    "var(--viz-4)",
+    "var(--viz-5)",
+    "var(--viz-6)",
+  ],
+}: {
+  title: string;
+  subtitle?: string;
+  data: DonutSlice[];
+  centerLabel: string;
+  colors?: string[];
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const id = useId();
+  const total = data.reduce((s, d) => s + Math.max(0, d.value), 0);
+  const S = 196,
+    cx = S / 2,
+    cy = S / 2,
+    R = 90,
+    r = 58;
+  let a = -Math.PI / 2;
+  const slices = data.map((d, i) => {
+    const frac = total > 0 ? Math.max(0, d.value) / total : 0;
+    const a0 = a;
+    a += frac * Math.PI * 2;
+    return {
+      ...d,
+      i,
+      a0,
+      a1: a,
+      frac,
+      color: d.label === "Other" ? "var(--viz-other)" : colors[i % colors.length]!,
+    };
+  });
+  const h = hover != null ? slices[hover] : null;
+  return (
+    <figure className="chart" style={{ position: "relative" }}>
+      <Head title={title} subtitle={subtitle} />
+      <div className="donut">
+        <svg
+          viewBox={`0 0 ${S} ${S}`}
+          role="img"
+          aria-labelledby={id}
+          style={{ width: S, maxWidth: "100%", flex: "none" }}
+          onMouseLeave={() => setHover(null)}
+        >
+          <title id={id}>{title}</title>
+          {total === 0 ? (
+            <circle
+              cx={cx}
+              cy={cy}
+              r={(R + r) / 2}
+              fill="none"
+              stroke="var(--surface-2)"
+              strokeWidth={R - r}
+            />
+          ) : (
+            slices.map((sl) => (
+              <MaybeLink key={sl.i} href={sl.href} title={`${sl.label}: ${formatCents(sl.value)}`}>
+                <path
+                  d={arcPath(cx, cy, R, r, sl.a0, sl.a1)}
+                  fill={sl.color}
+                  stroke="var(--surface)"
+                  strokeWidth={2}
+                  opacity={hover != null && hover !== sl.i ? 0.45 : 1}
+                  onMouseEnter={() => setHover(sl.i)}
+                />
+              </MaybeLink>
+            ))
+          )}
+          <text
+            x={cx}
+            y={cy - 4}
+            textAnchor="middle"
+            fill="var(--ink)"
+            style={{ fontSize: 22, fontWeight: 600 }}
+          >
+            {compact(h ? h.value : total)}
+          </text>
+          <text x={cx} y={cy + 16} textAnchor="middle" fill="var(--muted)">
+            {h ? `${h.label} · ${Math.round(h.frac * 100)}%` : centerLabel}
+          </text>
+        </svg>
+        <ul className="donut-legend">
+          {slices.map((sl) => (
+            <li
+              key={sl.i}
+              onMouseEnter={() => setHover(sl.i)}
+              onMouseLeave={() => setHover(null)}
+              style={{ opacity: hover != null && hover !== sl.i ? 0.55 : 1 }}
+            >
+              <i style={{ background: sl.color }} />
+              <span className="name">{sl.href ? <a href={sl.href}>{sl.label}</a> : sl.label}</span>
+              <span className="num">{formatCents(sl.value)}</span>
+              <span className="num muted">{Math.round(sl.frac * 100)}%</span>
+            </li>
+          ))}
+          {slices.length === 0 ? <li className="muted">Nothing spent yet.</li> : null}
+        </ul>
+      </div>
+      {h && h.detail && h.detail.length ? (
+        <Tip
+          title={`${h.label} · ${formatCents(h.value)}`}
+          left={4}
+          rows={h.detail.slice(0, 8).map((d) => ({ label: d.label, value: formatCents(d.value) }))}
+        />
+      ) : null}
+      <Table
+        columns={["Category", "Amount", "Share"]}
+        rows={slices.flatMap((sl) => [
+          [sl.label, formatCents(sl.value), `${Math.round(sl.frac * 100)}%`],
+          ...(sl.detail ?? []).map((d) => [`   ${d.label}`, formatCents(d.value), ""]),
+        ])}
+      />
+    </figure>
+  );
+}
+
+/* ------------------------------------------------------------ stacked hbars */
+
+export interface StackedRow {
+  label: string;
+  values: Record<string, number>;
+  note?: string;
+}
+
+/**
+ * A few magnitudes side by side, each optionally split into parts (Income vs Spent = fixed +
+ * variable). Horizontal so the labels read; <= 24px bars, 2px surface gap between parts, rounded
+ * data end; totals labeled at the end of each bar; legend for the parts; hover tooltip; table.
+ */
+export function StackedHBars({
+  title,
+  subtitle,
+  rows,
+  series,
+  width = 430,
+}: {
+  title: string;
+  subtitle?: string;
+  rows: StackedRow[];
+  series: Array<Series & { opacity?: number }>;
+  width?: number;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const id = useId();
+  const W = width;
+  const rowH = 40;
+  const padL = 70,
+    padR = 92,
+    padT = 6,
+    padB = 6;
+  const H = padT + padB + rowH * Math.max(1, rows.length);
+  const totalOf = (r: StackedRow) =>
+    series.reduce((s, sr) => s + Math.max(0, r.values[sr.key] ?? 0), 0);
+  const max = Math.max(1, ...rows.map(totalOf));
+  const xOf = (v: number) => padL + (v / max) * (W - padL - padR);
+  const h = hover != null ? rows[hover] : null;
+  return (
+    <figure className="chart" style={{ position: "relative" }}>
+      <Head title={title} subtitle={subtitle} right={<Legend series={series} />} />
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-labelledby={id}
+        onMouseLeave={() => setHover(null)}
+      >
+        <title id={id}>{title}</title>
+        {rows.map((row, i) => {
+          const y = padT + i * rowH + (rowH - 22) / 2;
+          const total = totalOf(row);
+          const parts = series.filter((sr) => (row.values[sr.key] ?? 0) > 0);
+          let x = padL;
+          return (
+            <g
+              key={i}
+              onMouseEnter={() => setHover(i)}
+              opacity={hover != null && hover !== i ? 0.6 : 1}
+            >
+              <rect x={0} y={padT + i * rowH} width={W} height={rowH} fill="transparent" />
+              <text x={padL - 10} y={y + 15} textAnchor="end" fill="var(--ink)">
+                {row.label}
+              </text>
+              {parts.map((sr, k) => {
+                const w = Math.max(0, xOf(row.values[sr.key]!) - padL);
+                const last = k === parts.length - 1;
+                const gap = last ? 0 : 2;
+                const x0 = x;
+                x += w;
+                const ww = Math.max(0, w - gap);
+                const rr = last ? Math.min(4, ww / 2) : 0;
+                return (
+                  <path
+                    key={sr.key}
+                    d={`M${x0},${y} H${x0 + ww - rr} Q${x0 + ww},${y} ${x0 + ww},${y + rr} V${y + 22 - rr} Q${x0 + ww},${y + 22} ${x0 + ww - rr},${y + 22} H${x0} Z`}
+                    fill={sr.color}
+                    opacity={sr.opacity ?? 1}
+                  />
+                );
+              })}
+              {total === 0 ? (
+                <rect x={padL} y={y + 10} width={2} height={2} fill="var(--muted)" />
+              ) : null}
+              <text x={xOf(total) + 8} y={y + 15} fill="var(--ink)">
+                {formatCents(total)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      {h && hover != null ? (
+        <Tip
+          title={h.note ? `${h.label} · ${h.note}` : h.label}
+          left={20}
+          rows={series
+            .filter((sr) => (h.values[sr.key] ?? 0) !== 0)
+            .map((sr) => ({
+              label: sr.key,
+              value: formatCents(h.values[sr.key] ?? 0),
+              color: sr.color,
+            }))}
+        />
+      ) : null}
+      <Table
+        columns={["", ...series.map((s) => s.key), "Total"]}
+        rows={rows.map((r) => [
+          r.label,
+          ...series.map((s) => formatCents(r.values[s.key] ?? 0)),
+          formatCents(totalOf(r)),
+        ])}
+      />
+    </figure>
+  );
+}
