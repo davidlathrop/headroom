@@ -12,6 +12,7 @@ function line(p: Partial<ReportLine> & { transactionId: string; amountCents: num
     accountId: "chk",
     accountOnBudget: true,
     postedDate: "2026-03-10",
+    effectiveDate: p.postedDate ?? "2026-03-10",
     categoryId: "cat",
     categoryName: "Groceries",
     parentCategoryName: "Food",

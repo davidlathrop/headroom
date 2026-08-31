@@ -23,7 +23,7 @@ import {
   transfers,
   type Transaction,
 } from "@/db/schema";
-import { monthEnd, monthStart } from "@/domain/dates";
+import { isMonthKey, monthEnd, monthKey, monthStart } from "@/domain/dates";
 import type { ISODate, MonthKey } from "@/domain/types";
 import { logAudit } from "./audit";
 import { AppError, newId, nowIso } from "./context";
@@ -31,6 +31,9 @@ import { createRule } from "./rules";
 import { setPaymentCategory } from "./transfers";
 
 const TRANSFER_CATEGORY = "cat-transfer";
+
+/** The date a transaction counts as: the `effective_date` override when set, else posted. */
+const effectiveDate = sql<string>`coalesce(${transactions.effectiveDate}, ${transactions.postedDate})`;
 
 export interface TransactionFilters {
   accountId?: string | null;
@@ -70,10 +73,12 @@ export function queryTransactions(
   const parent = alias(categories, "parent");
   const conds: SQL[] = [isNull(transactions.deletedAt)];
   if (f.accountId) conds.push(eq(transactions.accountId, f.accountId));
+  // The month filter follows the effective date so it matches the month reports; from/to are
+  // posted-date bounds (a reconciliation window is about what the bank posted when).
   if (f.month)
     conds.push(
-      gte(transactions.postedDate, monthStart(f.month)),
-      lte(transactions.postedDate, monthEnd(f.month)),
+      sql`${effectiveDate} >= ${monthStart(f.month)}`,
+      sql`${effectiveDate} <= ${monthEnd(f.month)}`,
     );
   if (f.from) conds.push(gte(transactions.postedDate, f.from));
   if (f.to) conds.push(lte(transactions.postedDate, f.to));
@@ -129,7 +134,7 @@ export function queryTransactions(
     .leftJoin(categories, eq(categories.id, transactions.categoryId))
     .leftJoin(parent, eq(parent.id, categories.parentId))
     .where(where)
-    .orderBy(desc(transactions.postedDate), desc(transactions.createdAt))
+    .orderBy(desc(effectiveDate), desc(transactions.createdAt))
     .limit(f.limit ?? 200)
     .offset(f.offset ?? 0)
     .all();
@@ -262,6 +267,38 @@ export function setOutlier(db: Db, id: string, isOutlier: boolean): void {
     .where(eq(transactions.id, id))
     .run();
   logAudit(db, "transaction", id, "set_outlier", { isOutlier: before.isOutlier }, { isOutlier });
+}
+
+/**
+ * Count a transaction in a different month than it posted: a mortgage paid 7/31 that belongs to
+ * August. Stored as the closest date in the chosen month to the posted date (7/31 → 8/1), so
+ * day-of-month views stay sensible. Null, or the posted month itself, clears the override.
+ * Reconciliation and coverage keep using the posted date — this only moves reporting and budgets.
+ */
+export function setEffectiveMonth(db: Db, id: string, month: MonthKey | null): void {
+  if (month != null && !isMonthKey(month)) throw new AppError(`Not a month: ${month}`, "invalid");
+  const before = getTransaction(db, id);
+  const next =
+    month == null || month === monthKey(before.postedDate)
+      ? null
+      : before.postedDate < monthStart(month)
+        ? monthStart(month)
+        : before.postedDate > monthEnd(month)
+          ? monthEnd(month)
+          : before.postedDate;
+  if (next === before.effectiveDate) return;
+  db.update(transactions)
+    .set({ effectiveDate: next, isReviewed: true, updatedAt: nowIso() })
+    .where(eq(transactions.id, id))
+    .run();
+  logAudit(
+    db,
+    "transaction",
+    id,
+    "set_effective_date",
+    { effectiveDate: before.effectiveDate },
+    { effectiveDate: next },
+  );
 }
 
 export function setNotes(db: Db, id: string, notes: string): void {

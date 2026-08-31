@@ -147,7 +147,8 @@ transactions
   payee_raw, memo_raw, external_id?,       -- source fields: immutable
   fingerprint, fingerprint_seq,            -- §5.3
   payee_key, payee_display,                -- derived / user-editable
-  category_id?, transfer_id?, is_reviewed BOOL, notes, deleted_at
+  category_id?, transfer_id?, is_reviewed BOOL, notes, deleted_at,
+  effective_date?                          -- counts in this date's month instead of posted (reports/budgets only)
   UNIQUE(account_id, fingerprint, fingerprint_seq)
   UNIQUE(account_id, external_id) WHERE external_id IS NOT NULL
   INDEX(account_id, posted_date), INDEX(category_id, posted_date), INDEX(payee_key)
@@ -344,6 +345,7 @@ Spend is broken out as **Fixed** (commitments: `spend_type = fixed`) and **Varia
 | Categories with `flow = ignore` are excluded everywhere | Balance-adjustment rows, opening balances, YNAB "Starting Balance" |
 | Partial-coverage months are labeled | You never mistake "we only have half of August" for "August was cheap" |
 | A flagged **outlier** keeps its category and counts in its month, but is left out of everything that generalizes across months — Trends (with an "include them" toggle) and the Forecast's typical-spend statistics | A one-off tax bill or bonus is real money that month, yet it must not skew "what do I usually spend on Taxes" |
+| A transaction can be told to **count in a different month** (`effective_date`, an overlay; null = posted date). Every report, trend, budget and forecast statistic follows it; reconciliation, coverage and recurring detection always use the posted date | A mortgage paid 7/31 for August belongs to August's spend — otherwise July shows two payments and August none, and the "per month" numbers spike for no real reason. The bank's balances still follow posted dates, so the ledger keeps reconciling |
 
 ### 6.3 Transfer detection
 

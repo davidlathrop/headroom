@@ -242,7 +242,7 @@ function cumulativeSpend(
   const perDay = new Array<number>(days + 1).fill(0);
   for (const l of reportFor(db, month, includeOutliers).lines) {
     if (!isSpendLine(l)) continue;
-    const d = splitISO(l.postedDate).d;
+    const d = splitISO(l.effectiveDate).d;
     perDay[d] = (perDay[d] ?? 0) - l.amountCents;
   }
   const lastDay = end <= asOf ? days : monthKey(asOf) === month ? splitISO(asOf).d : 0;
@@ -376,7 +376,9 @@ export function categoryZoom(
   });
   // Without a month, restrict the listing to the period.
   const periodStart = monthStart(keys[0]!);
-  const rows = month ? q.rows : q.rows.filter((t) => t.postedDate >= periodStart);
+  const rows = month
+    ? q.rows
+    : q.rows.filter((t) => (t.effectiveDate ?? t.postedDate) >= periodStart);
   return {
     id: categoryId,
     name: cat?.name ?? "Uncategorized",

@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import type { Db } from "@/db/client";
 import { accounts, categories, transactionSplits, transactions } from "@/db/schema";
@@ -12,6 +12,13 @@ import {
 import type { ISODate, MonthKey } from "@/domain/types";
 import { accountCoverage, listAccounts } from "./accounts";
 
+/** The date a transaction counts as: the user's `effective_date` override when set, else posted. */
+const effectiveDate = sql<string>`coalesce(${transactions.effectiveDate}, ${transactions.postedDate})`;
+
+/**
+ * Lines whose *effective* date falls in [start, end]: a mortgage paid 7/31 but marked as counting
+ * in August belongs to August's lines, not July's.
+ */
 export function linesForRange(db: Db, start: string, end: string): ReportLine[] {
   const parent = alias(categories, "parent");
   const rows = db
@@ -30,8 +37,8 @@ export function linesForRange(db: Db, start: string, end: string): ReportLine[] 
     .where(
       and(
         isNull(transactions.deletedAt),
-        gte(transactions.postedDate, start),
-        lte(transactions.postedDate, end),
+        sql`${effectiveDate} >= ${start}`,
+        sql`${effectiveDate} <= ${end}`,
       ),
     )
     .all();
@@ -50,7 +57,7 @@ export function linesForRange(db: Db, start: string, end: string): ReportLine[] 
     .innerJoin(transactions, eq(transactions.id, transactionSplits.transactionId))
     .leftJoin(splitCat, eq(splitCat.id, transactionSplits.categoryId))
     .leftJoin(splitParent, eq(splitParent.id, splitCat.parentId))
-    .where(and(gte(transactions.postedDate, start), lte(transactions.postedDate, end)))
+    .where(and(sql`${effectiveDate} >= ${start}`, sql`${effectiveDate} <= ${end}`))
     .all();
   const splitsByTxn = new Map<string, typeof splits>();
   for (const s of splits) {
@@ -66,6 +73,7 @@ export function linesForRange(db: Db, start: string, end: string): ReportLine[] 
       accountId: t.accountId,
       accountOnBudget: r.onBudget,
       postedDate: t.postedDate,
+      effectiveDate: t.effectiveDate ?? t.postedDate,
       isTransfer: t.transferId != null,
       isOutlier: t.isOutlier,
     };
@@ -144,7 +152,7 @@ export function monthReport(
 
 export function listMonthKeys(db: Db): MonthKey[] {
   const rows = db
-    .select({ m: sql<string>`substr(${transactions.postedDate}, 1, 7)` })
+    .select({ m: sql<string>`substr(${effectiveDate}, 1, 7)` })
     .from(transactions)
     .innerJoin(accounts, eq(accounts.id, transactions.accountId))
     .where(and(isNull(transactions.deletedAt), eq(accounts.onBudget, true)))

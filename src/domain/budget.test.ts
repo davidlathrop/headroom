@@ -21,6 +21,7 @@ function line(
     accountId: "a",
     accountOnBudget: true,
     postedDate: "2026-03-10",
+    effectiveDate: extra.postedDate ?? "2026-03-10",
     amountCents,
     categoryId,
     categoryName: categoryId,

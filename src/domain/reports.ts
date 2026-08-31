@@ -6,6 +6,8 @@ export interface ReportLine {
   accountId: string;
   accountOnBudget: boolean;
   postedDate: ISODate;
+  /** The date the line counts as: the user's override when set, else the posted date. */
+  effectiveDate: ISODate;
   amountCents: Cents;
   categoryId: string | null;
   categoryName: string | null;

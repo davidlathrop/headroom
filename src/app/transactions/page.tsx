@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CategoryPicker, type CategoryOption } from "@/components/CategoryPicker";
 import { Money } from "@/components/Money";
-import { formatISO, isISODate, isMonthKey } from "@/domain/dates";
+import { addMonths, formatISO, formatMonth, isISODate, isMonthKey, monthKey } from "@/domain/dates";
 import { formatCents } from "@/domain/money";
 import { listAccounts } from "@/services/accounts";
 import { listCategories } from "@/services/categories";
@@ -12,6 +12,7 @@ import { transferCandidatesFor } from "@/services/transferCandidates";
 import {
   linkTransferAction,
   renamePayeeAction,
+  setEffectiveMonthAction,
   setOutlierAction,
   unlinkTransferAction,
 } from "./actions";
@@ -74,7 +75,9 @@ export default async function TransactionsPage({
             payee. A transfer’s paying side can take a category too (a mortgage payment is Housing);
             “always” then applies it to every payment into that account. Flag a one-off as an{" "}
             <em>outlier</em> and it keeps its category and its month but stays out of trends and the
-            forecast.
+            forecast. Open a date to count a transaction in a different month — a mortgage paid 7/31
+            that belongs to August — and every report and budget follows; reconciliation keeps the
+            posted date.
           </p>
         </div>
       </div>
@@ -174,7 +177,47 @@ export default async function TransactionsPage({
             )}
             {rows.map((t) => (
               <tr key={t.id}>
-                <td className="num small">{formatISO(t.postedDate, "short")}</td>
+                <td className="num small">
+                  <details>
+                    <summary
+                      style={{ color: "inherit", listStyle: "none", cursor: "pointer" }}
+                      title={`Posted ${formatISO(t.postedDate)}. Open to count it in a different month.`}
+                    >
+                      {formatISO(t.postedDate, "short")}
+                      {t.effectiveDate ? (
+                        <span className="cell-sub">
+                          <span
+                            className="chip"
+                            title={`Posted ${formatISO(t.postedDate)}; counts in ${formatMonth(monthKey(t.effectiveDate))}`}
+                          >
+                            → {monthKey(t.effectiveDate)}
+                          </span>
+                        </span>
+                      ) : null}
+                    </summary>
+                    <form action={setEffectiveMonthAction} className="row" style={{ marginTop: 6 }}>
+                      <input type="hidden" name="id" value={t.id} />
+                      <select
+                        name="month"
+                        className="inline"
+                        defaultValue={t.effectiveDate ? monthKey(t.effectiveDate) : ""}
+                      >
+                        {[-3, -2, -1, 0, 1, 2, 3].map((off) => {
+                          const m = addMonths(monthKey(t.postedDate), off);
+                          return (
+                            <option key={m} value={off === 0 ? "" : m}>
+                              {formatMonth(m)}
+                              {off === 0 ? " (posted)" : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <button className="btn small" title="Count this transaction in that month">
+                        Count there
+                      </button>
+                    </form>
+                  </details>
+                </td>
                 <td>
                   <details>
                     <summary style={{ color: "inherit", listStyle: "none" }}>

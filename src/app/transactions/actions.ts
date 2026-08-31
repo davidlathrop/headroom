@@ -1,7 +1,12 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/services/context";
-import { setCategory, setOutlier, setPayeeDisplay } from "@/services/transactions";
+import {
+  setCategory,
+  setEffectiveMonth,
+  setOutlier,
+  setPayeeDisplay,
+} from "@/services/transactions";
 import { linkTransfer, unlinkTransfer } from "@/services/transfers";
 
 function refresh() {
@@ -54,5 +59,12 @@ export async function unlinkTransferAction(fd: FormData) {
 export async function setOutlierAction(fd: FormData) {
   const id = String(fd.get("id") ?? "");
   if (id) setOutlier(getDb(), id, String(fd.get("isOutlier")) === "1");
+  refresh();
+}
+
+export async function setEffectiveMonthAction(fd: FormData) {
+  const id = String(fd.get("id") ?? "");
+  const month = String(fd.get("month") ?? "");
+  if (id) setEffectiveMonth(getDb(), id, month || null);
   refresh();
 }

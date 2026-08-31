@@ -112,6 +112,13 @@ export const transactions = sqliteTable(
      * generalizes across months (trends, forecast statistics): a one-off tax bill, a bonus.
      */
     isOutlier: integer("is_outlier", { mode: "boolean" }).notNull().default(false),
+    /**
+     * The date this transaction counts as for reporting and budgets, when that differs from the
+     * posted date: a mortgage paid 7/31 that belongs to August. Null = the posted date governs.
+     * Reconciliation, coverage and recurring detection always use the posted date — the bank's
+     * balances don't care which month you budget something in.
+     */
+    effectiveDate: text("effective_date"),
     notes: text("notes").notNull().default(""),
     deletedAt: text("deleted_at"),
     ...timestamps,
