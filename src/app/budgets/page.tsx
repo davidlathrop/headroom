@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { CategoryChecklist } from "@/components/CategoryChecklist";
+import { Amount } from "@/components/Amount";
 import { Money } from "@/components/Money";
 import { formatMonth, monthKey, today } from "@/domain/dates";
-import { formatCents } from "@/domain/money";
 import { budgetSummaries, selectableCategoryGroups } from "@/services/budgets";
 import { getDb } from "@/services/context";
 import { createBudgetAction } from "./actions";
@@ -72,7 +72,7 @@ export default async function BudgetsPage({
                     >
                       <span className="label">{over ? "Over by" : "Left"}</span>
                       <span className="value" style={{ fontSize: 24 }}>
-                        {formatCents(Math.abs(s.remainingCents))}
+                        <Amount cents={Math.abs(s.remainingCents)} />
                       </span>
                     </div>
                   ) : null}
@@ -83,23 +83,33 @@ export default async function BudgetsPage({
                       <span style={{ width: `${Math.min(100, pct)}%` }} />
                     </div>
                     <div className="muted small" style={{ marginTop: 4 }}>
-                      <Money cents={s.targetedActualCents} /> of {formatCents(s.targetCents)}{" "}
+                      <Money cents={s.targetedActualCents} /> of <Amount cents={s.targetCents} />{" "}
                       targeted
-                      {s.actualCents !== s.targetedActualCents
-                        ? ` · ${formatCents(s.actualCents - s.targetedActualCents)} more in untargeted categories`
-                        : ""}
+                      {s.actualCents !== s.targetedActualCents ? (
+                        <>
+                          {" "}
+                          · <Amount cents={s.actualCents - s.targetedActualCents} /> more in
+                          untargeted categories
+                        </>
+                      ) : (
+                        ""
+                      )}
                     </div>
                   </>
                 ) : (
                   <div className="row" style={{ marginTop: 12, alignItems: "baseline" }}>
                     <span className="num" style={{ fontSize: 22, fontWeight: 600 }}>
-                      {formatCents(s.actualCents)}
+                      <Amount cents={s.actualCents} />
                     </span>
                     <span className="muted small">
                       spent so far ·{" "}
-                      {s.previousActualCents > 0
-                        ? `${formatCents(s.previousActualCents)} in ${formatMonth(s.previousMonth)}`
-                        : "no targets, tracking spend"}
+                      {s.previousActualCents > 0 ? (
+                        <>
+                          <Amount cents={s.previousActualCents} /> in {formatMonth(s.previousMonth)}
+                        </>
+                      ) : (
+                        "no targets, tracking spend"
+                      )}
                     </span>
                   </div>
                 )}

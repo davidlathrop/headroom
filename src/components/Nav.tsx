@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { PrivacyToggle } from "./privacy";
 
 const LINKS = [
   { href: "/", label: "This month" },
@@ -34,6 +35,7 @@ export function Nav() {
           </Link>
         );
       })}
+      <PrivacyToggle />
       <div className="foot">Local-first. Your data never leaves this machine.</div>
     </nav>
   );

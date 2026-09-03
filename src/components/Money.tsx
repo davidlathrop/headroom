@@ -1,4 +1,4 @@
-import { formatCents } from "@/domain/money";
+import { Amount } from "./Amount";
 
 export function Money({
   cents,
@@ -13,8 +13,11 @@ export function Money({
 }) {
   const cls = cents > 0 ? "money-pos" : "money-neg";
   return (
-    <span className={`num ${cls} ${className}`.trim()}>
-      {formatCents(cents, currency, { sign })}
-    </span>
+    <Amount
+      cents={cents}
+      sign={sign}
+      currency={currency}
+      className={`num ${cls} ${className}`.trim()}
+    />
   );
 }

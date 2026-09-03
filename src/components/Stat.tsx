@@ -1,4 +1,4 @@
-import { formatCents } from "@/domain/money";
+import { Amount } from "./Amount";
 
 export function Stat({
   label,
@@ -8,7 +8,7 @@ export function Stat({
 }: {
   label: string;
   cents: number;
-  hint?: string;
+  hint?: React.ReactNode;
   tone?: "headroom" | "neg";
 }) {
   const cls = [
@@ -18,7 +18,9 @@ export function Stat({
   return (
     <div className={`card ${cls}`}>
       <span className="label">{label}</span>
-      <span className="value">{formatCents(cents)}</span>
+      <span className="value">
+        <Amount cents={cents} />
+      </span>
       {hint ? <span className="hint">{hint}</span> : null}
     </div>
   );

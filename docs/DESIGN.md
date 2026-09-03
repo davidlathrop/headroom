@@ -112,6 +112,7 @@ Rules of the road:
 - Data lives in `~/.headroom/` (`HEADROOM_DATA_DIR` to move it): the database and, hash-named under `imports/`, the raw uploaded files, so a batch can be re-parsed after a parser fix; a retention setting can purge them.
 - Backups: nightly `VACUUM INTO data/backups/headroom-YYYY-MM-DD.sqlite`, keep 30. Optional Litestream replication to a bucket you own.
 - No telemetry, no external calls at runtime. Fonts and assets bundled.
+- Hide amounts: a sidebar switch masks every dollar figure (`$••••`, sign kept) and has the charts label themselves in percentages of a stated basis (income, target, peak month, total, today's cash) so the picture still reads with the numbers hidden. Pure presentation: a `data-privacy` attribute on `<html>` set before first paint from localStorage; CSS swaps value for mask, client charts reformat.
 - Secrets (if any) via environment; `.env` git-ignored; `data/` git-ignored.
 
 ---

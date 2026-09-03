@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { Columns, DivergingColumns, HBars, Lines, type Series } from "@/components/charts";
+import { Amount } from "@/components/Amount";
 import { Money } from "@/components/Money";
 import { Stat } from "@/components/Stat";
 import { addMonths, formatISO, formatMonth, isMonthKey } from "@/domain/dates";
-import { formatCents } from "@/domain/money";
 import { getDb } from "@/services/context";
 import { categoryZoom, monthZoom, trends } from "@/services/trends";
 
@@ -74,10 +74,22 @@ export default async function TrendsPage({
       <p className="muted small" style={{ margin: "0 0 12px" }}>
         {includeOutliers ? "Including" : "Leaving out"} {o.count} flagged outlier
         {o.count === 1 ? "" : "s"}
-        {o.spendCents ? ` (${formatCents(o.spendCents)} of spend` : ""}
-        {o.incomeCents
-          ? `${o.spendCents ? ", " : " ("}${formatCents(o.incomeCents)} of income`
-          : ""}
+        {o.spendCents ? (
+          <>
+            {" "}
+            (<Amount cents={o.spendCents} /> of spend
+          </>
+        ) : (
+          ""
+        )}
+        {o.incomeCents ? (
+          <>
+            {o.spendCents ? ", " : " ("}
+            <Amount cents={o.incomeCents} /> of income
+          </>
+        ) : (
+          ""
+        )}
         {o.spendCents || o.incomeCents ? ")" : ""} ·{" "}
         <Link href={url({ ...here, outliers: !includeOutliers })}>
           {includeOutliers ? "leave them out" : "include them"}
@@ -125,7 +137,7 @@ export default async function TrendsPage({
             </div>
             <h1>{z.name}</h1>
             <p className="sub">
-              {formatCents(z.totalCents)} over {scopeLabel} · {z.transactionCount} transaction
+              <Amount cents={z.totalCents} /> over {scopeLabel} · {z.transactionCount} transaction
               {z.transactionCount === 1 ? "" : "s"}
             </p>
           </div>
@@ -270,13 +282,24 @@ export default async function TrendsPage({
           <Stat
             label="Spent"
             cents={r.spendCents}
-            hint={`${formatCents(r.spendFixedCents)} fixed · ${formatCents(r.spendVariableCents)} variable`}
+            hint={
+              <>
+                <Amount cents={r.spendFixedCents} /> fixed · <Amount cents={r.spendVariableCents} />{" "}
+                variable
+              </>
+            }
           />
           <Stat
             label="Headroom"
             cents={r.leftOverCents}
             tone="headroom"
-            hint={r.savedCents ? `after ${formatCents(r.savedCents)} saved` : undefined}
+            hint={
+              r.savedCents ? (
+                <>
+                  after <Amount cents={r.savedCents} /> saved
+                </>
+              ) : undefined
+            }
           />
         </div>
         <div className="grid grid-2" style={{ marginTop: 16 }}>
@@ -312,9 +335,11 @@ export default async function TrendsPage({
             <p>
               {r.uncategorizedCount} transaction{r.uncategorizedCount === 1 ? "" : "s"} this month{" "}
               {r.uncategorizedCount === 1 ? "is" : "are"} uncategorized (
-              {formatCents(-r.uncategorizedCents)}).{" "}
-              <Link href={`/transactions?month=${month}&uncategorized=1`}>Categorize them</Link> and
-              the picture sharpens.
+              <Amount cents={-r.uncategorizedCents} />
+              ). <Link href={`/transactions?month=${month}&uncategorized=1`}>
+                Categorize them
+              </Link>{" "}
+              and the picture sharpens.
             </p>
           </div>
         ) : null}
@@ -411,6 +436,10 @@ export default async function TrendsPage({
             width={430}
             title="Where it went"
             subtitle={`last ${n} months · click to zoom`}
+            total={{
+              value: t.spendByGroup.reduce((s, g) => s + g.amountCents, 0),
+              label: "all spending",
+            }}
             data={t.spendByGroup.slice(0, 12).map((g) => ({
               label: g.name,
               value: g.amountCents,

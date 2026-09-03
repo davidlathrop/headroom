@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Bricolage_Grotesque, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
+import { PRIVACY_BOOT_SCRIPT } from "@/components/privacy-boot";
 
 const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
@@ -26,7 +27,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${plexMono.variable} ${bricolage.variable}`}>
+    // suppressHydrationWarning: the boot script may stamp data-privacy on <html> before React hydrates.
+    <html
+      lang="en"
+      className={`${plexSans.variable} ${plexMono.variable} ${bricolage.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: PRIVACY_BOOT_SCRIPT }} />
+      </head>
       <body>
         <div className="shell">
           <Nav />

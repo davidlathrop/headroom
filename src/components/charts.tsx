@@ -1,6 +1,7 @@
 "use client";
 import { useId, useMemo, useState } from "react";
-import { formatCents } from "@/domain/money";
+import { type AmountFormat, type Basis, useAmountFormat } from "@/components/privacy";
+import { maskCents } from "@/domain/money";
 
 /*
  * Small SVG chart kit following the data-viz spec: columns ≤ 24px with a 4px rounded data end and a
@@ -10,6 +11,9 @@ import { formatCents } from "@/domain/money";
  *
  * Marks can be links: pass `hrefs` (one per x position) and the mark becomes the way to zoom in.
  * Props stay serializable so server components can render these directly.
+ *
+ * Every chart formats amounts through useAmountFormat: dollars normally, and with amounts hidden
+ * percentages of a basis the chart names in its head (the target, income, the peak month, the total).
  */
 
 export interface Series {
@@ -34,30 +38,16 @@ function niceStep(raw: number): number {
   return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 5 ? 5 : 10) * p;
 }
 
-export function compact(cents: number): string {
-  const d = cents / 100;
-  const abs = Math.abs(d);
-  const s =
-    abs >= 1_000_000
-      ? `${(abs / 1_000_000).toFixed(1)}M`
-      : abs >= 10_000
-        ? `${Math.round(abs / 1000)}K`
-        : abs >= 1000
-          ? `${(abs / 1000).toFixed(1)}K`
-          : `${Math.round(abs)}`;
-  return `${d < 0 ? "−" : ""}$${s}`;
-}
-
-function yScale(lo: number, hi: number, f: Frame) {
-  const span = Math.max(1, hi - lo);
+function yScale(lo: number, hi: number, f: Frame, unit = 1) {
+  const span = Math.max(1, (hi - lo) / unit);
   const step = niceStep(span / 4);
-  const yMin = Math.floor(lo / step) * step;
-  const yMax = Math.ceil(hi / step) * step;
+  const yMin = Math.floor(lo / unit / step) * step;
+  const yMax = Math.ceil(hi / unit / step) * step;
   const yOf = (v: number) =>
-    f.padT + ((yMax - v) / Math.max(1, yMax - yMin)) * (f.H - f.padT - f.padB);
+    f.padT + ((yMax - v / unit) / Math.max(1, yMax - yMin)) * (f.H - f.padT - f.padB);
   const ticks: number[] = [];
-  for (let v = yMin; v <= yMax + 1e-9; v += step) ticks.push(v);
-  return { yOf, ticks, yMin, yMax };
+  for (let v = yMin; v <= yMax; v += step) ticks.push(v * unit);
+  return { yOf, ticks, yMin: yMin * unit, yMax: yMax * unit };
 }
 
 /** Column with a rounded data end and a square baseline; handles negative values. */
@@ -73,7 +63,17 @@ function columnPath(x: number, y0: number, y1: number, w: number, r = 4): string
   return `M${x},${top} V${bottom - rr} Q${x},${bottom} ${x + rr},${bottom} H${x + w - rr} Q${x + w},${bottom} ${x + w},${bottom - rr} V${top} Z`;
 }
 
-function Grid({ ticks, yOf, f }: { ticks: number[]; yOf: (v: number) => number; f: Frame }) {
+function Grid({
+  ticks,
+  yOf,
+  f,
+  fmt,
+}: {
+  ticks: number[];
+  yOf: (v: number) => number;
+  f: Frame;
+  fmt: AmountFormat;
+}) {
   return (
     <>
       {ticks.map((v) => (
@@ -86,8 +86,14 @@ function Grid({ ticks, yOf, f }: { ticks: number[]; yOf: (v: number) => number; 
             stroke="var(--rule)"
             strokeWidth={1}
           />
-          <text x={f.padL - 8} y={yOf(v) + 4} textAnchor="end" fill="var(--muted)">
-            {compact(v)}
+          <text
+            x={f.padL - 8}
+            y={yOf(v) + 4}
+            textAnchor="end"
+            fill="var(--muted)"
+            className={fmt.cls}
+          >
+            {fmt.short(v)}
           </text>
         </g>
       ))}
@@ -219,10 +225,13 @@ function MaybeLink({
 function Head({
   title,
   subtitle,
+  note,
   right,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
+  /** "as % of Income": what the numbers mean while amounts are hidden. */
+  note?: string | null;
   right?: React.ReactNode;
 }) {
   return (
@@ -230,6 +239,7 @@ function Head({
       <h3>
         {title}
         {subtitle ? <span className="muted small"> · {subtitle}</span> : null}
+        {note ? <span className="muted small"> · {note}</span> : null}
       </h3>
       {right}
     </div>
@@ -263,7 +273,7 @@ export function Columns({
   data: ColumnDatum[];
   series: Series[];
   mode: "grouped" | "stacked";
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   width?: number;
   /** A dashed horizontal reference (a target, a budget) drawn across the whole chart. */
   refLine?: { value: number; label: string };
@@ -271,6 +281,25 @@ export function Columns({
   const f = width < 600 ? NARROW : FRAME;
   const [hover, setHover] = useState<number | null>(null);
   const id = useId();
+  // With amounts hidden, bars read as % of the reference line, else of the tallest column.
+  const basis = useMemo<Basis | null>(() => {
+    if (refLine) return { value: refLine.value, label: refLine.label };
+    let best: Basis | null = null;
+    for (const d of data) {
+      if (mode === "stacked") {
+        const t = series.reduce((s, sr) => s + Math.max(0, d.values[sr.key] ?? 0), 0);
+        if (!best || t > best.value) best = { value: t, label: d.label };
+      } else {
+        for (const sr of series) {
+          const v = d.values[sr.key] ?? 0;
+          if (!best || v > best.value)
+            best = { value: v, label: series.length > 1 ? `${sr.key}, ${d.label}` : d.label };
+        }
+      }
+    }
+    return best;
+  }, [data, series, mode, refLine]);
+  const fmt = useAmountFormat(basis);
   const { yOf, ticks, xCenter, band } = useMemo(() => {
     let hi = refLine ? refLine.value : 0;
     for (const d of data) {
@@ -281,16 +310,16 @@ export function Columns({
         );
       else for (const sr of series) hi = Math.max(hi, d.values[sr.key] ?? 0);
     }
-    const sc = yScale(0, hi, f);
+    const sc = yScale(0, hi, f, fmt.unit);
     const band = (f.W - f.padL - f.padR) / Math.max(1, data.length);
     return { ...sc, band, xCenter: (i: number) => f.padL + band * (i + 0.5) };
-  }, [data, series, mode, f, refLine]);
+  }, [data, series, mode, f, refLine, fmt.unit]);
   const colW = Math.min(24, mode === "grouped" ? (band * 0.7) / series.length : band * 0.6);
   const h = hover != null ? data[hover] : null;
   const clickable = data.some((d) => d.href || d.segmentHrefs);
   return (
     <figure className="chart" style={{ position: "relative" }}>
-      <Head title={title} subtitle={subtitle} right={<Legend series={series} />} />
+      <Head title={title} subtitle={subtitle} note={fmt.note} right={<Legend series={series} />} />
       <svg
         viewBox={`0 0 ${f.W} ${f.H}`}
         role="img"
@@ -298,7 +327,7 @@ export function Columns({
         onMouseLeave={() => setHover(null)}
       >
         <title id={id}>{title}</title>
-        <Grid ticks={ticks} yOf={yOf} f={f} />
+        <Grid ticks={ticks} yOf={yOf} f={f} fmt={fmt} />
         {data.map((d, i) => {
           const cx = xCenter(i);
           const dim = hover != null && hover !== i ? 0.55 : 1;
@@ -398,8 +427,9 @@ export function Columns({
               stroke="var(--surface)"
               strokeWidth={3}
               paintOrder="stroke"
+              className={fmt.cls}
             >
-              {refLine.label} {compact(refLine.value)}
+              {refLine.label} {fmt.short(refLine.value)}
             </text>
           </g>
         ) : null}
@@ -412,10 +442,10 @@ export function Columns({
           rows={[
             ...series.map((sr) => ({
               label: sr.key,
-              value: formatCents(h.values[sr.key] ?? 0),
+              value: fmt.full(h.values[sr.key] ?? 0),
               color: sr.color,
             })),
-            ...(h.extra ?? []).map((e) => ({ label: e.label, value: formatCents(e.value) })),
+            ...(h.extra ?? []).map((e) => ({ label: e.label, value: fmt.full(e.value) })),
           ]}
           hint={
             clickable
@@ -436,8 +466,8 @@ export function Columns({
         ]}
         rows={data.map((d) => [
           d.label,
-          ...series.map((s) => formatCents(d.values[s.key] ?? 0)),
-          ...(d.extra ?? []).map((e) => formatCents(e.value)),
+          ...series.map((s) => fmt.full(d.values[s.key] ?? 0)),
+          ...(d.extra ?? []).map((e) => fmt.full(e.value)),
         ])}
       />
     </figure>
@@ -453,17 +483,26 @@ export function DivergingColumns({
 }: {
   title: string;
   data: Array<{ label: string; value: number; note?: string; href?: string }>;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
 }) {
   const f = FRAME;
   const [hover, setHover] = useState<number | null>(null);
   const id = useId();
+  // Hidden amounts read as % of the largest month either way.
+  const basis = useMemo<Basis | null>(() => {
+    let best: Basis | null = null;
+    for (const d of data)
+      if (!best || Math.abs(d.value) > best.value)
+        best = { value: Math.abs(d.value), label: d.label };
+    return best;
+  }, [data]);
+  const fmt = useAmountFormat(basis);
   const { yOf, ticks, xCenter, band } = useMemo(() => {
     const vals = data.map((d) => d.value);
-    const sc = yScale(Math.min(0, ...vals), Math.max(0, ...vals), f);
+    const sc = yScale(Math.min(0, ...vals), Math.max(0, ...vals), f, fmt.unit);
     const band = (f.W - f.padL - f.padR) / Math.max(1, data.length);
     return { ...sc, band, xCenter: (i: number) => f.padL + band * (i + 0.5) };
-  }, [data, f]);
+  }, [data, f, fmt.unit]);
   const colW = Math.min(24, band * 0.6);
   const h = hover != null ? data[hover] : null;
   const last = data[data.length - 1];
@@ -472,6 +511,7 @@ export function DivergingColumns({
       <Head
         title={title}
         subtitle={subtitle}
+        note={fmt.note}
         right={
           <div className="legend">
             <span>
@@ -496,7 +536,7 @@ export function DivergingColumns({
         onMouseLeave={() => setHover(null)}
       >
         <title id={id}>{title}</title>
-        <Grid ticks={ticks} yOf={yOf} f={f} />
+        <Grid ticks={ticks} yOf={yOf} f={f} fmt={fmt} />
         {data.map((d, i) => {
           const cx = xCenter(i);
           return (
@@ -533,8 +573,9 @@ export function DivergingColumns({
             y={yOf(last.value) + (last.value >= 0 ? -6 : 14)}
             textAnchor="middle"
             fill="var(--ink)"
+            className={fmt.cls}
           >
-            {compact(last.value)}
+            {fmt.short(last.value)}
           </text>
         ) : null}
         <XLabels labels={data.map((d) => d.label)} xCenter={xCenter} f={f} />
@@ -543,13 +584,13 @@ export function DivergingColumns({
         <Tip
           title={h.note ? `${h.label} · ${h.note}` : h.label}
           left={(xCenter(hover) / f.W) * 100}
-          rows={[{ label: "Headroom", value: formatCents(h.value) }]}
+          rows={[{ label: "Headroom", value: fmt.full(h.value) }]}
           hint={h.href ? "click to zoom in" : undefined}
         />
       ) : null}
       <Table
         columns={["Month", "Headroom"]}
-        rows={data.map((d) => [d.note ? `${d.label} (${d.note})` : d.label, formatCents(d.value)])}
+        rows={data.map((d) => [d.note ? `${d.label} (${d.note})` : d.label, fmt.full(d.value)])}
       />
     </figure>
   );
@@ -563,6 +604,7 @@ export function HBars({
   subtitle,
   color = "var(--viz-1)",
   width = 860,
+  total,
 }: {
   title: string;
   data: Array<{
@@ -575,13 +617,17 @@ export function HBars({
     /** Appended after the value label ("42%"). */
     suffix?: string;
   }>;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   color?: string;
   /** viewBox width; use ~430 when the chart sits in a half-width card so type stays legible. */
   width?: number;
+  /** The whole these bars are part of, for the shares shown when amounts are hidden. Defaults to their sum. */
+  total?: Basis;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const id = useId();
+  const sum = data.reduce((s, d) => s + Math.max(0, d.value), 0);
+  const fmt = useAmountFormat(total ?? { value: sum, label: "the total" });
   const rowH = 30;
   const W = width;
   const narrow = W < 600;
@@ -595,7 +641,7 @@ export function HBars({
   const h = hover != null ? data[hover] : null;
   return (
     <figure className="chart" style={{ position: "relative" }}>
-      <Head title={title} subtitle={subtitle} />
+      <Head title={title} subtitle={subtitle} note={fmt.note} />
       <svg
         viewBox={`0 0 ${W} ${H}`}
         role="img"
@@ -626,9 +672,9 @@ export function HBars({
                   fill={d.color ?? color}
                   opacity={hover != null && hover !== i ? 0.55 : 1}
                 />
-                <text x={padL + w + 8} y={y + 14} fill="var(--ink)">
-                  {formatCents(d.value)}
-                  {d.suffix ? <tspan fill="var(--muted)"> {d.suffix}</tspan> : null}
+                <text x={padL + w + 8} y={y + 14} fill="var(--ink)" className={fmt.cls}>
+                  {fmt.full(d.value)}
+                  {d.suffix && !fmt.hidden ? <tspan fill="var(--muted)"> {d.suffix}</tspan> : null}
                 </text>
               </g>
             </MaybeLink>
@@ -640,10 +686,10 @@ export function HBars({
           title={h.label}
           left={40}
           rows={[
-            { label: "Total", value: formatCents(h.value) },
+            { label: "Total", value: fmt.full(h.value) },
             ...(h.detail ?? [])
               .slice(0, 6)
-              .map((x) => ({ label: x.label, value: formatCents(x.value) })),
+              .map((x) => ({ label: x.label, value: fmt.full(x.value) })),
           ]}
           hint={h.href ? "click to zoom in" : undefined}
         />
@@ -651,8 +697,8 @@ export function HBars({
       <Table
         columns={["Category", "Amount"]}
         rows={data.flatMap((d) => [
-          [d.label, formatCents(d.value)],
-          ...(d.detail ?? []).map((x) => [`   ${x.label}`, formatCents(x.value)]),
+          [d.label, fmt.full(d.value)],
+          ...(d.detail ?? []).map((x) => [`   ${x.label}`, fmt.full(x.value)]),
         ])}
       />
     </figure>
@@ -679,18 +725,31 @@ export function Lines({
   title: string;
   data: LineDatum[];
   series: Series[];
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   width?: number;
   xTitle?: string;
 }) {
   const f = width < 600 ? NARROW : FRAME;
   const [hover, setHover] = useState<number | null>(null);
   const id = useId();
+  // Hidden amounts read as % of the highest point on any line.
+  const basis = useMemo<Basis | null>(() => {
+    let best: Basis | null = null;
+    for (const d of data)
+      for (const s of series) {
+        const v = d.values[s.key];
+        if (v == null || (best && Math.abs(v) <= best.value)) continue;
+        const at = xTitle === "Month" ? d.label : `${xTitle.toLowerCase()} ${d.label}`;
+        best = { value: Math.abs(v), label: series.length > 1 ? `${s.key}, ${at}` : at };
+      }
+    return best;
+  }, [data, series, xTitle]);
+  const fmt = useAmountFormat(basis);
   const { xs, ticks, yOf, paths, area, yMin } = useMemo(() => {
     const vals = data.flatMap((d) =>
       series.map((s) => d.values[s.key]).filter((v): v is number => v != null),
     );
-    const sc = yScale(Math.min(0, ...vals), Math.max(0, ...vals), f);
+    const sc = yScale(Math.min(0, ...vals), Math.max(0, ...vals), f, fmt.unit);
     const xs = data.map(
       (_, i) => f.padL + (i / Math.max(1, data.length - 1)) * (f.W - f.padL - f.padR),
     );
@@ -718,12 +777,17 @@ export function Lines({
         area = `M${pts.map((p) => `${p[0].toFixed(1)},${sc.yOf(p[1]).toFixed(1)}`).join(" L")} L${pts[pts.length - 1]![0].toFixed(1)},${sc.yOf(sc.yMin)} L${pts[0]![0].toFixed(1)},${sc.yOf(sc.yMin)} Z`;
     }
     return { xs, ticks: sc.ticks, yOf: sc.yOf, paths, area, yMin: sc.yMin };
-  }, [data, series, f]);
+  }, [data, series, f, fmt.unit]);
   void yMin;
   const h = hover != null ? data[hover] : null;
   return (
     <figure className="chart" style={{ position: "relative" }}>
-      <Head title={title} subtitle={subtitle} right={<Legend series={series} kind="line" />} />
+      <Head
+        title={title}
+        subtitle={subtitle}
+        note={fmt.note}
+        right={<Legend series={series} kind="line" />}
+      />
       <svg
         viewBox={`0 0 ${f.W} ${f.H}`}
         role="img"
@@ -739,7 +803,7 @@ export function Lines({
         }}
       >
         <title id={id}>{title}</title>
-        <Grid ticks={ticks} yOf={yOf} f={f} />
+        <Grid ticks={ticks} yOf={yOf} f={f} fmt={fmt} />
         {area ? <path d={area} fill={series[0]!.color} opacity={0.1} /> : null}
         {series.map((s, k) => (
           <path
@@ -766,8 +830,10 @@ export function Lines({
             if (li < 0) return null;
             const v = data[li]!.values[s.key]!;
             const y = yOf(v);
-            const labelFits = placed.every((py) => Math.abs(py - y) >= 14);
-            if (labelFits) placed.push(y);
+            // A peak that lands on the top gridline (always so as a percentage) keeps its label in frame.
+            const ly = Math.max(y - 10, f.padT - 4);
+            const labelFits = placed.every((py) => Math.abs(py - ly) >= 14);
+            if (labelFits) placed.push(ly);
             return (
               <g key={s.key}>
                 <circle
@@ -779,8 +845,14 @@ export function Lines({
                   strokeWidth={2}
                 />
                 {labelFits ? (
-                  <text x={xs[li]! - 8} y={y - 10} textAnchor="end" fill="var(--ink)">
-                    {compact(v)}
+                  <text
+                    x={xs[li]! - 8}
+                    y={ly}
+                    textAnchor="end"
+                    fill="var(--ink)"
+                    className={fmt.cls}
+                  >
+                    {fmt.short(v)}
                   </text>
                 ) : null}
               </g>
@@ -843,7 +915,7 @@ export function Lines({
           left={(xs[hover]! / f.W) * 100}
           rows={series.map((s) => ({
             label: s.key,
-            value: h.values[s.key] == null ? "—" : formatCents(h.values[s.key]!),
+            value: h.values[s.key] == null ? "—" : fmt.full(h.values[s.key]!),
             color: s.color,
           }))}
           hint={h.href ? "click to zoom in" : undefined}
@@ -853,7 +925,7 @@ export function Lines({
         columns={[xTitle, ...series.map((s) => s.key)]}
         rows={data.map((d) => [
           d.label,
-          ...series.map((s) => (d.values[s.key] == null ? "—" : formatCents(d.values[s.key]!))),
+          ...series.map((s) => (d.values[s.key] == null ? "—" : fmt.full(d.values[s.key]!))),
         ])}
       />
     </figure>
@@ -899,7 +971,7 @@ export function Donut({
   ],
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   data: DonutSlice[];
   centerLabel: string;
   colors?: string[];
@@ -907,6 +979,7 @@ export function Donut({
   const [hover, setHover] = useState<number | null>(null);
   const id = useId();
   const total = data.reduce((s, d) => s + Math.max(0, d.value), 0);
+  const fmt = useAmountFormat({ value: total, label: centerLabel });
   const S = 196,
     cx = S / 2,
     cy = S / 2,
@@ -927,9 +1000,18 @@ export function Donut({
     };
   });
   const h = hover != null ? slices[hover] : null;
+  const pctOf = (sl: { frac: number }) => `${Math.round(sl.frac * 100)}%`;
+  // The hero number: a slice's share on hover; at rest the total, which has no percentage to become.
+  const hero = h
+    ? fmt.hidden
+      ? pctOf(h)
+      : fmt.short(h.value)
+    : fmt.hidden
+      ? maskCents(total)
+      : fmt.short(total);
   return (
     <figure className="chart" style={{ position: "relative" }}>
-      <Head title={title} subtitle={subtitle} />
+      <Head title={title} subtitle={subtitle} note={fmt.note} />
       <div className="donut">
         <svg
           viewBox={`0 0 ${S} ${S}`}
@@ -950,7 +1032,7 @@ export function Donut({
             />
           ) : (
             slices.map((sl) => (
-              <MaybeLink key={sl.i} href={sl.href} title={`${sl.label}: ${formatCents(sl.value)}`}>
+              <MaybeLink key={sl.i} href={sl.href} title={`${sl.label}: ${fmt.full(sl.value)}`}>
                 <path
                   d={arcPath(cx, cy, R, r, sl.a0, sl.a1)}
                   fill={sl.color}
@@ -968,11 +1050,12 @@ export function Donut({
             textAnchor="middle"
             fill="var(--ink)"
             style={{ fontSize: 22, fontWeight: 600 }}
+            className={fmt.cls}
           >
-            {compact(h ? h.value : total)}
+            {hero}
           </text>
           <text x={cx} y={cy + 16} textAnchor="middle" fill="var(--muted)">
-            {h ? `${h.label} · ${Math.round(h.frac * 100)}%` : centerLabel}
+            {h ? (fmt.hidden ? h.label : `${h.label} · ${pctOf(h)}`) : centerLabel}
           </text>
         </svg>
         <ul className="donut-legend">
@@ -985,8 +1068,8 @@ export function Donut({
             >
               <i style={{ background: sl.color }} />
               <span className="name">{sl.href ? <a href={sl.href}>{sl.label}</a> : sl.label}</span>
-              <span className="num">{formatCents(sl.value)}</span>
-              <span className="num muted">{Math.round(sl.frac * 100)}%</span>
+              {fmt.hidden ? null : <span className="num amt-v">{fmt.full(sl.value)}</span>}
+              <span className="num muted">{pctOf(sl)}</span>
             </li>
           ))}
           {slices.length === 0 ? <li className="muted">Nothing spent yet.</li> : null}
@@ -994,18 +1077,28 @@ export function Donut({
       </div>
       {h && h.detail && h.detail.length ? (
         <Tip
-          title={`${h.label} · ${formatCents(h.value)}`}
+          title={`${h.label} · ${fmt.full(h.value)}`}
           left={4}
-          rows={h.detail.slice(0, 8).map((d) => ({ label: d.label, value: formatCents(d.value) }))}
+          rows={h.detail.slice(0, 8).map((d) => ({ label: d.label, value: fmt.full(d.value) }))}
         />
       ) : null}
-      <Table
-        columns={["Category", "Amount", "Share"]}
-        rows={slices.flatMap((sl) => [
-          [sl.label, formatCents(sl.value), `${Math.round(sl.frac * 100)}%`],
-          ...(sl.detail ?? []).map((d) => [`   ${d.label}`, formatCents(d.value), ""]),
-        ])}
-      />
+      {fmt.hidden ? (
+        <Table
+          columns={["Category", "Share"]}
+          rows={slices.flatMap((sl) => [
+            [sl.label, fmt.full(sl.value)],
+            ...(sl.detail ?? []).map((d) => [`   ${d.label}`, fmt.full(d.value)]),
+          ])}
+        />
+      ) : (
+        <Table
+          columns={["Category", "Amount", "Share"]}
+          rows={slices.flatMap((sl) => [
+            [sl.label, fmt.full(sl.value), pctOf(sl)],
+            ...(sl.detail ?? []).map((d) => [`   ${d.label}`, fmt.full(d.value), ""]),
+          ])}
+        />
+      )}
     </figure>
   );
 }
@@ -1031,7 +1124,7 @@ export function StackedHBars({
   width = 430,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   rows: StackedRow[];
   series: Array<Series & { opacity?: number }>;
   width?: number;
@@ -1048,11 +1141,17 @@ export function StackedHBars({
   const totalOf = (r: StackedRow) =>
     series.reduce((s, sr) => s + Math.max(0, r.values[sr.key] ?? 0), 0);
   const max = Math.max(1, ...rows.map(totalOf));
+  // Hidden amounts read as % of the longest bar (Income, in the month view).
+  const top = rows.reduce<StackedRow | null>(
+    (b, r) => (!b || totalOf(r) > totalOf(b) ? r : b),
+    null,
+  );
+  const fmt = useAmountFormat(top ? { value: totalOf(top), label: top.label } : null);
   const xOf = (v: number) => padL + (v / max) * (W - padL - padR);
   const h = hover != null ? rows[hover] : null;
   return (
     <figure className="chart" style={{ position: "relative" }}>
-      <Head title={title} subtitle={subtitle} right={<Legend series={series} />} />
+      <Head title={title} subtitle={subtitle} note={fmt.note} right={<Legend series={series} />} />
       <svg
         viewBox={`0 0 ${W} ${H}`}
         role="img"
@@ -1095,8 +1194,8 @@ export function StackedHBars({
               {total === 0 ? (
                 <rect x={padL} y={y + 10} width={2} height={2} fill="var(--muted)" />
               ) : null}
-              <text x={xOf(total) + 8} y={y + 15} fill="var(--ink)">
-                {formatCents(total)}
+              <text x={xOf(total) + 8} y={y + 15} fill="var(--ink)" className={fmt.cls}>
+                {fmt.full(total)}
               </text>
             </g>
           );
@@ -1110,7 +1209,7 @@ export function StackedHBars({
             .filter((sr) => (h.values[sr.key] ?? 0) !== 0)
             .map((sr) => ({
               label: sr.key,
-              value: formatCents(h.values[sr.key] ?? 0),
+              value: fmt.full(h.values[sr.key] ?? 0),
               color: sr.color,
             }))}
         />
@@ -1119,8 +1218,8 @@ export function StackedHBars({
         columns={["", ...series.map((s) => s.key), "Total"]}
         rows={rows.map((r) => [
           r.label,
-          ...series.map((s) => formatCents(r.values[s.key] ?? 0)),
-          formatCents(totalOf(r)),
+          ...series.map((s) => fmt.full(r.values[s.key] ?? 0)),
+          fmt.full(totalOf(r)),
         ])}
       />
     </figure>

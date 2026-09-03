@@ -32,6 +32,8 @@ HEADROOM_DB=./data/demo.sqlite HEADROOM_IMPORT_DIR=./data/demo-imports npm run d
 6. **Forecast** — paychecks, bills and subscriptions are detected from your history (confirm or dismiss them); the next 12 months are projected from those plus the median of your recent variable spend; the 60-day cash curve shows the lowest point before your next paycheck, and _safe to spend_ is that minus a buffer. Add planned one-offs (a trip, a tax bill) and they flow through.
 7. **Budgets** — create a budget by picking the categories to include (a whole group, or individual categories) and giving each a monthly target. Each month shows spent vs target per line, what's left, and a marker for where "on pace" sits today. Leave a target blank to just watch a category. Pick any month, and the "Over time" charts show the budget stacked by category across 3/6/12 months against its target, the budget next to all your spending, and every spend category with the budget's own highlighted.
 
+**Hide amounts** — the switch at the bottom of the sidebar masks every dollar figure and relabels the charts in percentages (of income, of the target, of the peak month, of the total) so the shape of your money still reads while the numbers stay private — for screen-sharing or working somewhere public. Each browser remembers its own setting.
+
 Overlapping exports are safe and encouraged: re-importing a file inserts nothing; two identical coffees on the same day both survive; a pending charge that later posts under a different description is flagged for review rather than silently duplicated or dropped.
 
 ## Demo video

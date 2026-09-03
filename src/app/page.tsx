@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { Donut, StackedHBars, type StackedRow } from "@/components/charts";
+import { Amount } from "@/components/Amount";
 import { Money } from "@/components/Money";
 import { Stat } from "@/components/Stat";
 import { daysInMonth, formatISO, formatMonth, monthKey, splitISO, today } from "@/domain/dates";
-import { formatCents } from "@/domain/money";
 import { foldSlices } from "@/domain/reports";
 import { listAccounts } from "@/services/accounts";
 import { budgetSummaries } from "@/services/budgets";
@@ -120,18 +120,34 @@ export default function HomePage() {
         <Stat
           label="Spent"
           cents={report.spendCents}
-          hint={`${formatCents(report.spendFixedCents)} fixed · ${formatCents(report.spendVariableCents)} variable${report.outliers.spendCents ? ` · incl. ${formatCents(report.outliers.spendCents)} flagged outlier${report.outliers.count === 1 ? "" : "s"}` : ""}`}
+          hint={
+            <>
+              <Amount cents={report.spendFixedCents} /> fixed ·{" "}
+              <Amount cents={report.spendVariableCents} /> variable
+              {report.outliers.spendCents ? (
+                <>
+                  {" "}
+                  · incl. <Amount cents={report.outliers.spendCents} /> flagged outlier
+                  {report.outliers.count === 1 ? "" : "s"}
+                </>
+              ) : null}
+            </>
+          }
         />
         <Stat
           label="Headroom"
           cents={report.leftOverCents}
           tone="headroom"
           hint={
-            report.savedCents > 0
-              ? `after ${formatCents(report.savedCents)} saved`
-              : report.savingsRate != null
-                ? `${Math.round(report.savingsRate * 100)}% of income kept`
-                : "income − spend − saved"
+            report.savedCents > 0 ? (
+              <>
+                after <Amount cents={report.savedCents} /> saved
+              </>
+            ) : report.savingsRate != null ? (
+              `${Math.round(report.savingsRate * 100)}% of income kept`
+            ) : (
+              "income − spend − saved"
+            )
           }
         />
       </div>
@@ -151,9 +167,14 @@ export default function HomePage() {
           <StackedHBars
             title="Income vs spend"
             subtitle={
-              hasData
-                ? `headroom ${formatCents(report.leftOverCents)}${report.partial ? " · coverage incomplete" : ""}`
-                : "nothing yet this month"
+              hasData ? (
+                <>
+                  headroom <Amount cents={report.leftOverCents} />
+                  {report.partial ? " · coverage incomplete" : ""}
+                </>
+              ) : (
+                "nothing yet this month"
+              )
             }
             rows={incomeVsSpend}
             series={[
@@ -239,14 +260,27 @@ export default function HomePage() {
                     <span style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                       <Link href={`/budgets/${b.budget.id}`}>{b.budget.name}</Link>
                       <span className="num">
-                        {b.targetCents > 0
-                          ? `${formatCents(b.targetedActualCents)} of ${formatCents(b.targetCents)}`
-                          : `${formatCents(b.actualCents)} spent`}
+                        {b.targetCents > 0 ? (
+                          <>
+                            <Amount cents={b.targetedActualCents} /> of{" "}
+                            <Amount cents={b.targetCents} />
+                          </>
+                        ) : (
+                          <>
+                            <Amount cents={b.actualCents} /> spent
+                          </>
+                        )}
                         {b.targetCents > 0 ? (
                           <span className={`chip ${over ? "bad" : "ok"}`} style={{ marginLeft: 8 }}>
-                            {over
-                              ? `over ${formatCents(-b.remainingCents)}`
-                              : `${formatCents(b.remainingCents)} left`}
+                            {over ? (
+                              <>
+                                over <Amount cents={-b.remainingCents} />
+                              </>
+                            ) : (
+                              <>
+                                <Amount cents={b.remainingCents} /> left
+                              </>
+                            )}
                           </span>
                         ) : null}
                       </span>

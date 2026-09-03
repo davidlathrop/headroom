@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { CategoryPicker, type CategoryOption } from "@/components/CategoryPicker";
+import { Amount } from "@/components/Amount";
 import { Money } from "@/components/Money";
 import { addMonths, formatISO, formatMonth, isISODate, isMonthKey, monthKey } from "@/domain/dates";
-import { formatCents } from "@/domain/money";
 import { listAccounts } from "@/services/accounts";
 import { listCategories } from "@/services/categories";
 import { getDb } from "@/services/context";
@@ -357,7 +357,8 @@ export default async function TransactionsPage({
                     <Money cents={totals.netCents} />
                   </strong>
                   <span className="cell-sub num">
-                    in {formatCents(totals.inflowCents)} · out {formatCents(totals.outflowCents)}
+                    in <Amount cents={totals.inflowCents} /> · out{" "}
+                    <Amount cents={totals.outflowCents} />
                   </span>
                 </td>
                 <td></td>

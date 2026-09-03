@@ -28,6 +28,7 @@ export function CategoryChecklist({
           type="text"
           name={`target:${c.id}`}
           inputMode="decimal"
+          className="amt-input"
           placeholder="target (optional)"
           aria-label={`Monthly target for ${c.name}`}
           defaultValue={target == null ? "" : (target / 100).toFixed(2)}

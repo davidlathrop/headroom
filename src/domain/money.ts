@@ -75,3 +75,41 @@ export function mad(values: number[]): number {
   const m = median(values);
   return median(values.map((v) => Math.abs(v - m)));
 }
+
+/** Axis-style short form: 123456 → "$1.2K"; 12_345_600 → "$123K"; -50 → "−$1". */
+export function formatCompactCents(cents: Cents): string {
+  const d = cents / 100;
+  const abs = Math.abs(d);
+  const s =
+    abs >= 1_000_000
+      ? `${(abs / 1_000_000).toFixed(1)}M`
+      : abs >= 10_000
+        ? `${Math.round(abs / 1000)}K`
+        : abs >= 1000
+          ? `${(abs / 1000).toFixed(1)}K`
+          : `${Math.round(abs)}`;
+  return `${d < 0 ? "−" : ""}$${s}`;
+}
+
+/** What stands in for an amount when amounts are hidden: the sign survives, the magnitude does not. */
+export function maskCents(cents: Cents, opts: { sign?: boolean } = {}): string {
+  if (cents < 0) return "−$••••";
+  if (opts.sign && cents > 0) return "+$••••";
+  return "$••••";
+}
+
+/**
+ * A part as a percentage of a whole, for charts with amounts hidden: 25000 of 100000 → "25%".
+ * Whole percents from 10% up, one decimal below that so small slices stay distinguishable
+ * ("2.5%"), and "—" when there is no whole to compare against.
+ */
+export function formatShare(part: number, whole: number, opts: { sign?: boolean } = {}): string {
+  if (!(whole > 0)) return "—";
+  const p = (part / whole) * 100;
+  const abs = Math.abs(p);
+  const s = abs >= 9.95 ? String(Math.round(abs)) : String(Math.round(abs * 10) / 10);
+  if (s === "0") return "0%";
+  if (p < 0) return `−${s}%`;
+  if (opts.sign) return `+${s}%`;
+  return `${s}%`;
+}

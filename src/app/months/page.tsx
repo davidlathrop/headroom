@@ -1,7 +1,7 @@
 import Link from "next/link";
+import { Amount } from "@/components/Amount";
 import { Money } from "@/components/Money";
 import { formatMonth } from "@/domain/dates";
-import { formatCents } from "@/domain/money";
 import { getDb } from "@/services/context";
 import { listMonthReports } from "@/services/reports";
 
@@ -96,7 +96,8 @@ export default async function MonthsPage({
                       className="chip warn"
                       title="Counted in this row; left out of trends and forecast"
                     >
-                      incl. {formatCents(r.outliers.spendCents + r.outliers.incomeCents)} outlier
+                      incl. <Amount cents={r.outliers.spendCents + r.outliers.incomeCents} />{" "}
+                      outlier
                       {r.outliers.count === 1 ? "" : "s"}
                     </span>
                   ) : null}

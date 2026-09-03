@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
+import { type Basis, useAmountFormat } from "@/components/privacy";
 import { formatISO } from "@/domain/dates";
-import { formatCents } from "@/domain/money";
 
 export interface CurvePoint {
   date: string;
@@ -13,6 +13,7 @@ export interface CurvePoint {
  * 60-day projected cash balance. One series, so no legend; the title carries it.
  * Marks per the chart spec: 2px line, 10% area wash, hairline grid, ≥8px end markers with a surface ring,
  * a crosshair + tooltip on hover, and the lowest point directly labeled.
+ * With amounts hidden the curve reads as % of today's cash (or of its peak when today is at or below zero).
  */
 export function CashCurve({
   points,
@@ -30,26 +31,36 @@ export function CashCurve({
     padR = 16,
     padT = 16,
     padB = 32;
+  const basis = useMemo<Basis | null>(() => {
+    const first = points[0]?.balanceCents ?? 0;
+    if (first > 0) return { value: first, label: "today's cash" };
+    const peak = Math.max(0, ...points.map((p) => Math.abs(p.balanceCents)), Math.abs(bufferCents));
+    return peak > 0 ? { value: peak, label: "the peak" } : null;
+  }, [points, bufferCents]);
+  const fmt = useAmountFormat(basis);
+  const unit = fmt.unit;
   const { xs, ys, ticks, path, area, yOf } = useMemo(() => {
     const vals = points.map((p) => p.balanceCents);
-    const lo = Math.min(0, bufferCents, ...vals);
-    const hi = Math.max(bufferCents, ...vals);
+    const lo = Math.min(0, bufferCents, ...vals) / unit;
+    const hi = Math.max(bufferCents, ...vals) / unit;
     const span = Math.max(1, hi - lo);
     const step = niceStep(span / 4);
     const yMin = Math.floor(lo / step) * step;
     const yMax = Math.ceil(hi / step) * step;
-    const yOf = (v: number) => padT + ((yMax - v) / Math.max(1, yMax - yMin)) * (H - padT - padB);
+    const yOf = (v: number) =>
+      padT + ((yMax - v / unit) / Math.max(1, yMax - yMin)) * (H - padT - padB);
     const xOf = (i: number) => padL + (i / Math.max(1, points.length - 1)) * (W - padL - padR);
     const xs = points.map((_, i) => xOf(i));
     const ys = vals.map(yOf);
     const ticks: number[] = [];
-    for (let v = yMin; v <= yMax; v += step) ticks.push(v);
+    for (let v = yMin; v <= yMax; v += step) ticks.push(v * unit);
     const path = xs
       .map((x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i]!.toFixed(1)}`)
       .join(" ");
-    const area = `${path} L${xs[xs.length - 1]!.toFixed(1)},${yOf(yMin).toFixed(1)} L${xs[0]!.toFixed(1)},${yOf(yMin).toFixed(1)} Z`;
+    const floor = yOf(yMin * unit).toFixed(1);
+    const area = `${path} L${xs[xs.length - 1]!.toFixed(1)},${floor} L${xs[0]!.toFixed(1)},${floor} Z`;
     return { xs, ys, ticks, path, area, yOf };
-  }, [points, bufferCents]);
+  }, [points, bufferCents, unit]);
 
   const lowestIdx = lowestDate ? points.findIndex((p) => p.date === lowestDate) : -1;
   const eventIdx = points.map((p, i) => (p.events.length ? i : -1)).filter((i) => i >= 0);
@@ -88,8 +99,14 @@ export function CashCurve({
               stroke="var(--rule)"
               strokeWidth={1}
             />
-            <text x={padL - 8} y={yOf(v) + 4} textAnchor="end" fill="var(--muted)">
-              {compact(v)}
+            <text
+              x={padL - 8}
+              y={yOf(v) + 4}
+              textAnchor="end"
+              fill="var(--muted)"
+              className={fmt.cls}
+            >
+              {fmt.short(v)}
             </text>
           </g>
         ))}
@@ -102,8 +119,14 @@ export function CashCurve({
           strokeWidth={1}
           strokeDasharray="4 3"
         />
-        <text x={W - padR} y={yOf(bufferCents) - 5} textAnchor="end" fill="var(--muted)">
-          buffer {compact(bufferCents)}
+        <text
+          x={W - padR}
+          y={yOf(bufferCents) - 5}
+          textAnchor="end"
+          fill="var(--muted)"
+          className={fmt.cls}
+        >
+          buffer {fmt.short(bufferCents)}
         </text>
         {[0, 15, 30, 45, 60]
           .filter((i) => i < points.length)
@@ -148,8 +171,14 @@ export function CashCurve({
               stroke="var(--surface)"
               strokeWidth={2}
             />
-            <text x={xs[lowestIdx]} y={ys[lowestIdx]! + 18} textAnchor="middle" fill="var(--ink)">
-              lowest {compact(points[lowestIdx]!.balanceCents)}
+            <text
+              x={xs[lowestIdx]}
+              y={ys[lowestIdx]! + 18}
+              textAnchor="middle"
+              fill="var(--ink)"
+              className={fmt.cls}
+            >
+              lowest {fmt.short(points[lowestIdx]!.balanceCents)}
             </text>
           </g>
         )}
@@ -182,6 +211,11 @@ export function CashCurve({
           </g>
         )}
       </svg>
+      {fmt.note ? (
+        <div className="muted small" style={{ marginTop: 4 }}>
+          Balances {fmt.note}
+        </div>
+      ) : null}
       {h && hover != null ? (
         <div
           className="card small"
@@ -196,11 +230,11 @@ export function CashCurve({
         >
           <div className="muted">{formatISO(h.date)}</div>
           <div className="num" style={{ fontWeight: 600 }}>
-            {formatCents(h.balanceCents)}
+            {fmt.full(h.balanceCents)}
           </div>
           {h.events.map((e, i) => (
             <div key={i} className="num muted">
-              {e.label} {formatCents(e.amountCents, "USD", { sign: true })}
+              {e.label} {fmt.full(e.amountCents, { sign: true })}
             </div>
           ))}
         </div>
@@ -213,18 +247,4 @@ function niceStep(raw: number): number {
   const p = Math.pow(10, Math.floor(Math.log10(Math.max(1, raw))));
   const r = raw / p;
   return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 5 ? 5 : 10) * p;
-}
-
-function compact(cents: number): string {
-  const d = cents / 100;
-  const abs = Math.abs(d);
-  const s =
-    abs >= 1_000_000
-      ? `${(abs / 1_000_000).toFixed(1)}M`
-      : abs >= 10_000
-        ? `${Math.round(abs / 1000)}K`
-        : abs >= 1000
-          ? `${(abs / 1000).toFixed(1)}K`
-          : `${Math.round(abs)}`;
-  return `${d < 0 ? "−" : ""}$${s}`;
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CategoryChecklist } from "@/components/CategoryChecklist";
 import { Columns, HBars, type Series } from "@/components/charts";
+import { Amount } from "@/components/Amount";
 import { Money } from "@/components/Money";
 import { MonthPicker } from "@/components/MonthPicker";
 import { Stat } from "@/components/Stat";
@@ -14,7 +15,6 @@ import {
   splitISO,
   today,
 } from "@/domain/dates";
-import { formatCents } from "@/domain/money";
 import {
   budgetHistory,
   budgetPeriod,
@@ -62,7 +62,7 @@ function Delta({ cents }: { cents: number }) {
   if (cents === 0) return <span className="muted">—</span>;
   return (
     <span className={`num ${cents > 0 ? "delta-up" : "delta-down"}`}>
-      {cents > 0 ? "▲" : "▼"} {formatCents(Math.abs(cents))}
+      {cents > 0 ? "▲" : "▼"} <Amount cents={Math.abs(cents)} />
     </span>
   );
 }
@@ -194,7 +194,7 @@ export default async function BudgetPage({
               h.partial ? `${formatMonth(h.month)} · coverage incomplete` : formatMonth(h.month)
             }
           >
-            {shortMonth(h.month)} <span className="num">{formatCents(h.actualCents)}</span>
+            {shortMonth(h.month)} <Amount cents={h.actualCents} className="num" />
             {h.partial ? "*" : ""}
           </Link>
         ))}
@@ -211,11 +211,20 @@ export default async function BudgetPage({
             label="Spent"
             cents={r.targetedActualCents}
             hint={
-              untargeted.length
-                ? `plus ${formatCents(r.actualCents - r.targetedActualCents)} in ${plural(untargeted.length)} without a target`
-                : isCurrent && r.targetCents > 0
-                  ? `on pace would be ${formatCents(Math.round(r.targetCents * pace))}`
-                  : `${formatCents(r.previousActualCents)} in ${formatMonth(r.previousMonth)}`
+              untargeted.length ? (
+                <>
+                  plus <Amount cents={r.actualCents - r.targetedActualCents} /> in{" "}
+                  {plural(untargeted.length)} without a target
+                </>
+              ) : isCurrent && r.targetCents > 0 ? (
+                <>
+                  on pace would be <Amount cents={Math.round(r.targetCents * pace)} />
+                </>
+              ) : (
+                <>
+                  <Amount cents={r.previousActualCents} /> in {formatMonth(r.previousMonth)}
+                </>
+              )
             }
           />
           <Stat
@@ -307,7 +316,7 @@ export default async function BudgetPage({
                           {row.targetCents == null ? (
                             <span className="muted">—</span>
                           ) : (
-                            formatCents(row.targetCents)
+                            <Amount cents={row.targetCents} />
                           )}
                         </td>
                         <td className="num">
@@ -315,10 +324,10 @@ export default async function BudgetPage({
                             <span className="muted">—</span>
                           ) : rowOver ? (
                             <span className="chip bad">
-                              over {formatCents(-row.remainingCents)}
+                              over <Amount cents={-row.remainingCents} />
                             </span>
                           ) : (
-                            formatCents(row.remainingCents)
+                            <Amount cents={row.remainingCents} />
                           )}
                         </td>
                       </>
@@ -356,7 +365,7 @@ export default async function BudgetPage({
                   </strong>
                   {r.hasTargets && untargeted.length ? (
                     <span className="cell-sub">
-                      {formatCents(r.targetedActualCents)} against targets
+                      <Amount cents={r.targetedActualCents} /> against targets
                     </span>
                   ) : null}
                 </td>
@@ -367,14 +376,18 @@ export default async function BudgetPage({
                 {r.hasTargets ? (
                   <>
                     <td className="num">
-                      <strong>{formatCents(r.targetCents)}</strong>
+                      <strong>
+                        <Amount cents={r.targetCents} />
+                      </strong>
                     </td>
                     <td className="num">
                       <strong>
                         {over ? (
-                          <span className="chip bad">over {formatCents(-r.remainingCents)}</span>
+                          <span className="chip bad">
+                            over <Amount cents={-r.remainingCents} />
+                          </span>
                         ) : (
-                          formatCents(r.remainingCents)
+                          <Amount cents={r.remainingCents} />
                         )}
                       </strong>
                     </td>
@@ -416,7 +429,11 @@ export default async function BudgetPage({
           <Stat
             label="Spent in this budget"
             cents={period.totals.actualCents}
-            hint={`${formatCents(Math.round(period.totals.actualCents / n))} a month on average`}
+            hint={
+              <>
+                <Amount cents={Math.round(period.totals.actualCents / n)} /> a month on average
+              </>
+            }
           />
           {r.hasTargets ? (
             <Stat
@@ -427,7 +444,11 @@ export default async function BudgetPage({
               }
               cents={Math.abs(period.totals.targetCents - period.totals.actualCents)}
               tone={period.totals.targetCents - period.totals.actualCents < 0 ? "neg" : "headroom"}
-              hint={`target ${formatCents(period.totals.targetCents)} over ${n} months`}
+              hint={
+                <>
+                  target <Amount cents={period.totals.targetCents} /> over {n} months
+                </>
+              }
             />
           ) : (
             <Stat
@@ -442,9 +463,13 @@ export default async function BudgetPage({
               {periodShare == null ? "—" : `${Math.round(periodShare * 100)}%`}
             </span>
             <span className="hint">
-              {r.hasTargets
-                ? `of ${formatCents(period.totals.allSpendCents)} spent in total`
-                : "of everything spent in the period"}
+              {r.hasTargets ? (
+                <>
+                  of <Amount cents={period.totals.allSpendCents} /> spent in total
+                </>
+              ) : (
+                "of everything spent in the period"
+              )}
             </span>
           </div>
         </div>
@@ -528,6 +553,7 @@ export default async function BudgetPage({
               title="Where all the money went"
               subtitle={`every expense category, ${n} months`}
               width={430}
+              total={{ value: period.totals.allSpendCents, label: "all spending" }}
               data={period.breakdown.slice(0, 14).map((b) => ({
                 label: b.groupName ? `${b.name} (${b.groupName})` : b.name,
                 value: b.amountCents,

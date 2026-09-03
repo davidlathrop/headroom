@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { formatCents, mad, median, parseCents } from "./money";
+import {
+  formatCents,
+  formatCompactCents,
+  formatShare,
+  mad,
+  maskCents,
+  median,
+  parseCents,
+} from "./money";
 
 describe("parseCents", () => {
   it("parses plain and formatted amounts without floats", () => {
@@ -44,5 +52,54 @@ describe("median / mad", () => {
     expect(median([])).toBe(0);
     expect(mad([10, 10, 10, 100])).toBe(0);
     expect(mad([1, 2, 3, 4, 100])).toBe(1);
+  });
+});
+
+describe("formatCompactCents", () => {
+  it("shortens to K and M with the app's minus sign", () => {
+    expect(formatCompactCents(0)).toBe("$0");
+    expect(formatCompactCents(99_950)).toBe("$1000");
+    expect(formatCompactCents(123_456)).toBe("$1.2K");
+    expect(formatCompactCents(1_234_500)).toBe("$12K");
+    expect(formatCompactCents(123_456_700)).toBe("$1.2M");
+    expect(formatCompactCents(-5_000)).toBe("−$50");
+  });
+});
+
+describe("maskCents", () => {
+  it("keeps only the sign", () => {
+    expect(maskCents(123_456)).toBe("$••••");
+    expect(maskCents(1)).toBe("$••••");
+    expect(maskCents(0)).toBe("$••••");
+    expect(maskCents(-7)).toBe("−$••••");
+    expect(maskCents(-999_999_99)).toBe("−$••••");
+    expect(maskCents(500, { sign: true })).toBe("+$••••");
+    expect(maskCents(-500, { sign: true })).toBe("−$••••");
+    expect(maskCents(0, { sign: true })).toBe("$••••");
+  });
+});
+
+describe("formatShare", () => {
+  it("rounds to whole percents from 10% and one decimal below", () => {
+    expect(formatShare(25_000, 100_000)).toBe("25%");
+    expect(formatShare(100_000, 100_000)).toBe("100%");
+    expect(formatShare(150_000, 100_000)).toBe("150%");
+    expect(formatShare(9_949, 100_000)).toBe("9.9%");
+    expect(formatShare(9_950, 100_000)).toBe("10%");
+    expect(formatShare(2_500, 100_000)).toBe("2.5%");
+    expect(formatShare(40, 100_000)).toBe("0%");
+    expect(formatShare(0, 100_000)).toBe("0%");
+    expect(formatShare(33_333, 100_000)).toBe("33%");
+  });
+  it("carries sign like formatCents", () => {
+    expect(formatShare(-25_000, 100_000)).toBe("−25%");
+    expect(formatShare(-500, 100_000)).toBe("−0.5%");
+    expect(formatShare(25_000, 100_000, { sign: true })).toBe("+25%");
+    expect(formatShare(0, 100_000, { sign: true })).toBe("0%");
+  });
+  it("has nothing to say without a whole", () => {
+    expect(formatShare(500, 0)).toBe("—");
+    expect(formatShare(500, -100)).toBe("—");
+    expect(formatShare(500, NaN)).toBe("—");
   });
 });

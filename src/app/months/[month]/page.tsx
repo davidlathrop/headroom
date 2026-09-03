@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Fragment } from "react";
+import { Amount } from "@/components/Amount";
 import { Money } from "@/components/Money";
 import { Stat } from "@/components/Stat";
 import { addMonths, formatMonth, isMonthKey } from "@/domain/dates";
-import { formatCents } from "@/domain/money";
 import { getDb } from "@/services/context";
 import { categoryBreakdown } from "@/services/reports";
 
@@ -47,7 +47,7 @@ export default async function MonthPage({
               <>
                 {" · "}including {report.outliers.count} flagged outlier
                 {report.outliers.count === 1 ? "" : "s"} (
-                {formatCents(report.outliers.spendCents + report.outliers.incomeCents)}) ·{" "}
+                <Amount cents={report.outliers.spendCents + report.outliers.incomeCents} />) ·{" "}
                 <Link href={`/months/${month}?outliers=0`}>leave them out</Link>
               </>
             ) : null}
@@ -62,13 +62,31 @@ export default async function MonthPage({
         <Stat
           label="Spent"
           cents={report.spendCents}
-          hint={`${formatCents(report.spendFixedCents)} fixed · ${formatCents(report.spendVariableCents)} variable${report.outliers.spendCents ? ` · incl. ${formatCents(report.outliers.spendCents)} flagged outlier${report.outliers.count === 1 ? "" : "s"}` : ""}`}
+          hint={
+            <>
+              <Amount cents={report.spendFixedCents} /> fixed ·{" "}
+              <Amount cents={report.spendVariableCents} /> variable
+              {report.outliers.spendCents ? (
+                <>
+                  {" "}
+                  · incl. <Amount cents={report.outliers.spendCents} /> flagged outlier
+                  {report.outliers.count === 1 ? "" : "s"}
+                </>
+              ) : null}
+            </>
+          }
         />
         <Stat
           label="Headroom"
           cents={report.leftOverCents}
           tone="headroom"
-          hint={report.savedCents ? `after ${formatCents(report.savedCents)} saved` : undefined}
+          hint={
+            report.savedCents ? (
+              <>
+                after <Amount cents={report.savedCents} /> saved
+              </>
+            ) : undefined
+          }
         />
       </div>
       <div className="section">

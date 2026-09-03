@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { CashCurve } from "@/components/CashCurve";
+import { Amount } from "@/components/Amount";
 import { Money } from "@/components/Money";
 import { formatISO, formatMonth, today } from "@/domain/dates";
-import { formatCents } from "@/domain/money";
 import { listCategories } from "@/services/categories";
 import { getDb } from "@/services/context";
 import { forecastView } from "@/services/forecast";
@@ -93,12 +93,18 @@ export default function ForecastPage() {
               : " (next 60 days)"}
           </span>
           <span className="value">
-            {f.safeToSpendCents == null ? "—" : formatCents(f.safeToSpendCents)}
+            {f.safeToSpendCents == null ? "—" : <Amount cents={f.safeToSpendCents} />}
           </span>
           <span className="hint">
-            {f.lowestPoint
-              ? `lowest cash ${formatCents(f.lowestPoint.balanceCents)} on ${formatISO(f.lowestPoint.date, "short")}, minus a ${formatCents(f.bufferCents)} buffer`
-              : "needs a cash balance"}
+            {f.lowestPoint ? (
+              <>
+                lowest cash <Amount cents={f.lowestPoint.balanceCents} /> on{" "}
+                {formatISO(f.lowestPoint.date, "short")}, minus a <Amount cents={f.bufferCents} />{" "}
+                buffer
+              </>
+            ) : (
+              "needs a cash balance"
+            )}
           </span>
         </div>
         <div className="card stat">
@@ -111,11 +117,15 @@ export default function ForecastPage() {
         <div className="card stat">
           <span className="label">Projected headroom, next 12 months</span>
           <span className="value">
-            {formatCents(f.months.slice(1).reduce((s, m) => s + m.leftOverCents, 0))}
+            <Amount cents={f.months.slice(1).reduce((s, m) => s + m.leftOverCents, 0)} />
           </span>
           <span className="hint">
             ending net cash{" "}
-            {f.months.length ? formatCents(f.months[f.months.length - 1]!.netCashEndCents) : "—"}
+            {f.months.length ? (
+              <Amount cents={f.months[f.months.length - 1]!.netCashEndCents} />
+            ) : (
+              "—"
+            )}
           </span>
         </div>
       </div>
@@ -196,7 +206,7 @@ export default function ForecastPage() {
           <details style={{ marginTop: 10 }}>
             <summary>
               Typical variable spend used (
-              {formatCents(f.variableMedians.reduce((s, v) => s + v.medianCents, 0))} / month)
+              <Amount cents={f.variableMedians.reduce((s, v) => s + v.medianCents, 0)} /> / month)
             </summary>
             <ul className="list small">
               {f.variableMedians.map((v) => (
@@ -255,7 +265,9 @@ export default function ForecastPage() {
                       <td className="small">
                         {CADENCE_LABEL[s.cadence]}
                         {s.amountMadCents / Math.max(1, Math.abs(s.typicalAmountCents)) > 0.05 ? (
-                          <span className="cell-sub">varies ±{formatCents(s.amountMadCents)}</span>
+                          <span className="cell-sub">
+                            varies ±<Amount cents={s.amountMadCents} />
+                          </span>
                         ) : null}
                       </td>
                       <td className="num">
@@ -272,6 +284,7 @@ export default function ForecastPage() {
                             defaultValue={(s.typicalAmountCents / 100).toFixed(2)}
                             style={{ width: 96, textAlign: "right" }}
                             aria-label="Typical amount"
+                            className="amt-input"
                           />
                         </form>
                       </td>
@@ -372,6 +385,7 @@ export default function ForecastPage() {
                 <input
                   type="text"
                   name="buffer"
+                  className="amt-input"
                   placeholder={`${(f.bufferCents / 100).toFixed(2)} (one month of fixed spend)`}
                   defaultValue={bufferSetting == null ? "" : (bufferSetting / 100).toFixed(2)}
                   style={{ width: 180 }}
