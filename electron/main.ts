@@ -182,9 +182,6 @@ if (!app.requestSingleInstanceLock()) {
       const url = useStandalone ? await startStandalone() : DEV_URL;
       if (smoke) return runSmoke(url);
       createWindow(url);
-      app.on("activate", () => {
-        if (BrowserWindow.getAllWindows().length === 0) createWindow(url);
-      });
     } catch (e) {
       log("startup failed", e);
       if (smoke) {
@@ -197,8 +194,10 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
+  // Closing the window quits, on macOS too: Headroom is a single-window app with a server
+  // behind it, and lingering in the Dock with nothing to show would only keep that server alive.
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") app.quit();
+    app.quit();
   });
   app.on("before-quit", stopServer);
   app.on("will-quit", stopServer);
