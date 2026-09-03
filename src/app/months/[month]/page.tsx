@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Fragment } from "react";
 import { Money } from "@/components/Money";
 import { Stat } from "@/components/Stat";
 import { addMonths, formatMonth, isMonthKey } from "@/domain/dates";
@@ -84,8 +85,8 @@ export default async function MonthPage({
             </thead>
             <tbody>
               {groups.map((g) => (
-                <>
-                  <tr key={g.name}>
+                <Fragment key={g.name}>
+                  <tr>
                     <td>
                       <strong>{g.name}</strong>
                     </td>
@@ -113,7 +114,7 @@ export default async function MonthPage({
                       </td>
                     </tr>
                   ))}
-                </>
+                </Fragment>
               ))}
               {groups.length === 0 && (
                 <tr>
